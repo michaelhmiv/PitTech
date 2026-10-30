@@ -126,9 +126,17 @@ import java.util.UUID
             compose.onNodeWithTag("fork-wrap-0-foil").performScrollTo().performClick()
             compose.onNodeWithTag("fork-target-0").performScrollTo().performTextReplacement("165")
             shot("public-fork-tweak")
+            // The text entries leave the soft keyboard up over the
+            // sheet; at the 1.5 font scale its save tap can land on
+            // the keyboard instead of the button (this step timed out
+            // at font 1.5 while passing at 1.15). Dismiss and settle
+            // first, then tap, then wait on the fork's own state.
+            closeFocusedSoftKeyboard()
+            compose.waitForIdle()
             compose.onNodeWithTag("fork-save").performScrollTo().performClick()
-            compose.waitUntil(15000) { compose.onAllNodesWithTag("fork-save").fetchSemanticsNodes().isEmpty() || compose.onAllNodesWithTag("fork-error").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(15000) { manager.state.value.savedDetailId == id || compose.onAllNodesWithTag("fork-error").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("fork-error").assertDoesNotExist()
+            compose.waitUntil(15000) { compose.onAllNodesWithTag("fork-save").fetchSemanticsNodes().isEmpty() }
             waitFor("public-open-recipes")
             assertEquals(id, manager.state.value.savedDetailId)
 

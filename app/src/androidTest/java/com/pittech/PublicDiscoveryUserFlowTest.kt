@@ -29,7 +29,8 @@ import java.util.Base64
             override suspend fun pack(id: String,revision: String,to: File)=to.apply { writeBytes(Base64.getDecoder().decode(f.getString("packBase64"))) }
             override suspend fun image(id: String,asset: JSONObject)=Base64.getDecoder().decode(f.getString("imageBase64"))
         }
-        compose.runOnUiThread { ViewModelProvider(compose.activity).get(CooksViewModel::class.java).installPublicTestAPI(api) }
+        lateinit var viewModel: CooksViewModel
+        compose.runOnUiThread { viewModel=ViewModelProvider(compose.activity).get(CooksViewModel::class.java);viewModel.installPublicTestAPI(api) }
         compose.activityRule.scenario.recreate()
         waitFor("nav-discover");compose.onNodeWithTag("nav-discover").performClick()
         val id=f.getJSONObject("detail").getString("id");waitFor("discover-open-$id");compose.onNodeWithTag("discover-open-$id").performScrollTo().performClick()
@@ -38,12 +39,19 @@ import java.util.Base64
         // no Cook Pack download. Saving as presented forks both recipes
         // with the book's "— my version" names.
         compose.onNodeWithTag("public-fork").performScrollTo().performClick();waitFor("fork-save");shot("public-fork-tweak")
+        // At the 1.5 font scale the sheet is tall and a lingering soft
+        // keyboard can swallow the save tap (the fork tests timed out
+        // on exactly this interaction at font 1.5 while passing at
+        // 1.15): dismiss it, settle, then tap.
+        closeFocusedSoftKeyboard();compose.waitForIdle()
         compose.onNodeWithTag("fork-save").performScrollTo().assertIsDisplayed().performClick()
-        // A fork failure keeps the sheet open with its error showing —
-        // surface that error as this test's failure instead of a bare
-        // timeout, so the message is in the log.
-        compose.waitUntil(15000){compose.onAllNodesWithTag("fork-save").fetchSemanticsNodes().isEmpty()||compose.onAllNodesWithTag("fork-error").fetchSemanticsNodes().isNotEmpty()}
+        // Wait on the fork's own state, not just the sheet: success is
+        // the manager recording the save; a failure keeps the sheet
+        // open with its error showing, which the next assertion then
+        // surfaces as this test's failure with the message attached.
+        compose.waitUntil(15000){viewModel.publicDiscovery.state.value.savedDetailId==id||compose.onAllNodesWithTag("fork-error").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("fork-error").assertDoesNotExist()
+        assertEquals(id,viewModel.publicDiscovery.state.value.savedDetailId)
         // PL-19: after a save, the detail's primary action is "Open in Recipes".
         waitFor("public-open-recipes");compose.onNodeWithTag("public-open-recipes").assertIsDisplayed();shot("public-saved")
         val saved=runBlocking(Dispatchers.IO){app.database.recipeDao().recipes()};assertEquals(2,saved.size)
