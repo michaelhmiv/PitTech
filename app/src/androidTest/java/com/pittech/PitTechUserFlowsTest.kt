@@ -638,7 +638,11 @@ class PitTechUserFlowsTest {
         saveScreenshot("serve-plan-not-started")
         composeRule.onNodeWithText("Adjust schedule").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("serve-plan-not-started").fetchSemanticsNodes().isNotEmpty() }
-        composeRule.onNodeWithTag("serve-plan-not-started").assertIsDisplayed()
+        // Slice 4's day-board now sits above the badge in the editor's
+        // scrollable column; at font 1.5 the badge rests below the fold
+        // (its presence wait above passes; only the display assert fails).
+        // Scroll it into view first, as the upcoming-card badge does.
+        composeRule.onNodeWithTag("serve-plan-not-started").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Save plan").assertIsDisplayed()
         composeRule.onAllNodesWithText("Save for later").assertCountEquals(0)
         composeRule.onNodeWithText("Cancel").performClick()
