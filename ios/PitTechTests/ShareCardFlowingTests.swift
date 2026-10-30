@@ -1,6 +1,5 @@
 import XCTest
 import UIKit
-import Vision
 import CoreImage
 @testable import PitTech
 
@@ -130,66 +129,30 @@ import CoreImage
         let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.png")
         attachment.name = "Publication share card"; attachment.lifetime = .keepAlways; add(attachment)
         let url = "https://pittech.app/c/\(itemId)"
-        // TEMP DIAGNOSTIC (remove with the fix): dump the generator's
-        // raw module matrix and three decode attempts to the log.
-        func asciiGrid(_ cg: CGImage) -> String {
-            let w = cg.width, h = cg.height
-            guard w <= 80, h <= 80 else { return "too big: \(w)x\(h)" }
-            var px = [UInt8](repeating: 0, count: w * h)
-            let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
-                                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
-            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
-            var rows: [String] = []
-            for y in 0..<h { rows.append((0..<w).map { px[y * w + $0] < 128 ? "##" : "  " }.joined()) }
-            return rows.joined(separator: "\n")
+        // The in-test decoder is CIDetector, the platform's other
+        // first-party QR reader — the counterpart of Android's ZXing
+        // pass over the rendered bitmap. VNDetectBarcodesRequest is
+        // not usable for this in the simulator CI environment: run
+        // 40973426702's diagnostic printed the generator's raw 35×35
+        // module matrix (a textbook code) and Vision returned no
+        // observations for it at any size, while CIDetector decoded
+        // the production image to this exact URL.
+        func decode(_ cg: CGImage) -> [String] {
+            let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil,
+                                      options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
+            let features = detector?.features(in: CIImage(cgImage: cg)) as? [CIQRCodeFeature]
+            return (features ?? []).compactMap(\.messageString)
         }
-        func visionDecode(_ cg: CGImage) -> [String] {
-            let r = VNDetectBarcodesRequest(); r.symbologies = [.qr]
-            try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([r])
-            return (r.results ?? []).compactMap(\.payloadStringValue)
-        }
-        let diagFilter = CIFilter.qrCodeGenerator(); diagFilter.message = Data(url.utf8); diagFilter.correctionLevel = "M"
-        if let out = diagFilter.outputImage, let rawCG = CIContext().createCGImage(out, from: out.extent) {
-            print("QRDIAG extent=\(out.extent) rawCG=\(rawCG.width)x\(rawCG.height)")
-            print(asciiGrid(rawCG))
-            let upFormat = UIGraphicsImageRendererFormat(); upFormat.scale = 1
-            let up = UIGraphicsImageRenderer(size: CGSize(width: rawCG.width * 8, height: rawCG.height * 8), format: upFormat).image { c in
-                c.cgContext.interpolationQuality = .none
-                UIImage(cgImage: rawCG).draw(in: CGRect(x: 0, y: 0, width: rawCG.width * 8, height: rawCG.height * 8))
-            }
-            print("QRDIAG relayStyleDecode=\(visionDecode(up.cgImage!))")
-        } else { print("QRDIAG filter produced nothing") }
-        if let mine = NativeShareCardQR.image(url), let mineCG = mine.cgImage {
-            print("QRDIAG mine=\(mineCG.width)x\(mineCG.height) vision=\(visionDecode(mineCG))")
-            let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
-            let features = detector?.features(in: CIImage(cgImage: mineCG)) as? [CIQRCodeFeature]
-            print("QRDIAG mine CIDetector=\((features ?? []).map { $0.messageString ?? "nil" })")
-        } else { print("QRDIAG NativeShareCardQR.image returned nil") }
         // Stage 1: the generated code itself decodes. This isolates
         // generation from placement — a failure here is the renderer,
         // a failure below is the card.
         let standalone = try XCTUnwrap(NativeShareCardQR.image(url)?.cgImage, "the QR generator must produce an image")
-        let soloRequest = VNDetectBarcodesRequest(); soloRequest.symbologies = [.qr]
-        try VNImageRequestHandler(cgImage: standalone, options: [:]).perform([soloRequest])
-        let solo = (soloRequest.results ?? []).compactMap(\.payloadStringValue)
+        let solo = decode(standalone)
         XCTAssertTrue(solo.contains(url), "the generated QR itself must decode to the canonical URL; decoded: \(solo)")
-        // Stage 2: the code as printed on the card decodes. Vision's
-        // detector does not find a 118 px code in a full 1080×1350
-        // frame (ZXing, Android's decoder, does), so the footer is
-        // framed the way a phone camera frames it: crop the card's
-        // bottom-right — the footer's home — and scale it up with
-        // nearest-neighbour so the modules stay hard-edged.
-        let full = try XCTUnwrap(image.cgImage)
-        let footerCrop = try XCTUnwrap(full.cropping(to: CGRect(x: 810, y: 1080, width: 270, height: 270)))
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
-        let framed = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 1080), format: format).image { context in
-            context.cgContext.interpolationQuality = .none
-            UIImage(cgImage: footerCrop).draw(in: CGRect(x: 0, y: 0, width: 1080, height: 1080))
-        }
-        let request = VNDetectBarcodesRequest()
-        request.symbologies = [.qr]
-        try VNImageRequestHandler(cgImage: try XCTUnwrap(framed.cgImage), options: [:]).perform([request])
-        let payloads = (request.results ?? []).compactMap(\.payloadStringValue)
+        // Stage 2: the code as printed on the full rendered card
+        // decodes to the same URL — the mirror of Android's
+        // whole-bitmap ZXing decode.
+        let payloads = decode(try XCTUnwrap(image.cgImage))
         XCTAssertTrue(payloads.contains(url),
                       "the footer QR must decode to the canonical URL; decoded: \(payloads)")
     }
