@@ -296,6 +296,34 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
     }
+    // Text entry is the fragile step on the hosted runners: a tap can
+    // land while a sheet is still settling and the field never takes
+    // first responder, so a bare typeText dies with "Neither element
+    // nor any descendant has keyboard focus" — across two CI waves that
+    // signature hit the fork sheet's rub field, its target field, and
+    // an unrelated account field in another shard. Work patiently:
+    // tap the field's center until the field itself reports focus,
+    // type through the app (input follows first responder), then prove
+    // the typing landed by reading the field's value back; retry the
+    // whole cycle a bounded number of times before failing.
+    private func focusAndType(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false) {
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        for _ in 0..<3 {
+            for _ in 0..<10 where !field.hasFocus {
+                field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                _ = field.waitForExistence(timeout: 1)
+                if field.hasFocus { break }
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            guard field.hasFocus else { continue }
+            if clearingFirst, let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
+                app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
+            }
+            app.typeText(text)
+            if (field.value as? String)?.contains(text) == true { return }
+        }
+        XCTFail("Could not type '\(text)' into field '\(field.identifier)' (value: \(String(describing: field.value))).")
+    }
     // Flowing Slice 5 chain (mirrors Android's FlowingHappyPathFlowTest):
     // Discover → star → fork → tweak → plan-this → a start time, not a form.
     // Runs signed-in through --flowing-chain-ui-test: the fixture feed and
@@ -315,19 +343,13 @@ final class MealRecipeFlowsTests: XCTestCase {
             let starred = app.staticTexts["Your star is saved."]; reveal(starred, app: app); XCTAssertTrue(starred.waitForExistence(timeout: 15))
             // Fork → tweak-lite: rub, wrap and target are the only decisions.
             let fork = app.buttons["public-fork"]; reveal(fork, app: app); fork.tap()
-            let rub = app.textFields["fork-rub-0"]; reveal(rub, app: app); XCTAssertTrue(rub.waitForExistence(timeout: 15))
-            for _ in 0..<4 where !rub.hasFocus { rub.tap(); _ = rub.waitForExistence(timeout: 1) }
-            XCTAssertTrue(rub.hasFocus, "The rub field must take keyboard focus."); rub.typeText("House rub")
+            let rub = app.textFields["fork-rub-0"]; reveal(rub, app: app)
+            focusAndType("House rub", into: rub, app: app)
             let foil = app.buttons["fork-wrap-0-foil"]; reveal(foil, app: app); foil.tap()
-            // The rub field can keep first responder past a tap on the
-            // next field (CI, standard text: the tap landed but focus
-            // stayed) — tap until the target field actually holds focus
-            // before typing into it.
+            // The story pre-fills the target with its last recorded food
+            // temperature (162); the tweak replaces it with 165.
             let target = app.textFields["fork-target-0"]; reveal(target, app: app)
-            for _ in 0..<4 where !target.hasFocus { target.tap(); _ = target.waitForExistence(timeout: 1) }
-            XCTAssertTrue(target.hasFocus, "The target field must take keyboard focus.")
-            if let current = target.value as? String, !current.isEmpty { target.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count)) }
-            target.typeText("165")
+            focusAndType("165", into: target, app: app, clearingFirst: true)
             let save = app.buttons["fork-save"]; reveal(save, app: app); save.tap()
             // Success lands back on the publication with the saved copy open.
             let openRecipes = app.buttons["public-open-recipes"]; XCTAssertTrue(openRecipes.waitForExistence(timeout: 20))
