@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.pittech.data.PublicManager
 import com.pittech.data.PublicPresentation
 
-@Composable internal fun PublicProfileContent(manager: PublicManager,state: PublicPresentation) {
+@Composable internal fun PublicProfileContent(manager: PublicManager,state: PublicPresentation,temperatureUnit: String = "°F") {
     TextButton(onClick={manager.back()}) { Text("Back to Discover") }
     if(state.profileLoading)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_PROFILE)}
     state.profileName?.let { name->
@@ -18,16 +18,11 @@ import com.pittech.data.PublicPresentation
                 TurnInMetaLabel("Public cookbook")
                 Text(name,style=PitTechTextStyles.bannerCard)
                 Text("@${state.profileHandle}",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
-                Text("Named publications from this public cookbook. Saving a recipe makes a private copy.",style=MaterialTheme.typography.bodyMedium,color=pitTechTokens().inkMuted)
+                Text("Named publications from this public cookbook. Forking a recipe makes a private copy of your own.",style=MaterialTheme.typography.bodyMedium,color=pitTechTokens().inkMuted)
             }
         }
         state.profileItems.forEach { item->
-            TurnInCard(Modifier.fillMaxWidth(),onClick={manager.open(item.id)}) {
-                Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text(item.title,style=PitTechTextStyles.bannerCard)
-                    Text("${item.likes} likes · ${item.forks} forks",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
-                }
-            }
+            DiscoverCard(manager,item,temperatureUnit) { manager.open(item.id) }
         }
         if(state.profileItems.isEmpty() && !state.profileLoading){
             TurnInDashedCard(Modifier.fillMaxWidth()) {

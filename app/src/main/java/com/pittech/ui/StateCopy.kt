@@ -168,7 +168,7 @@ internal object LoadingCopy {
     const val LOADING_RECIPES: String = "Loading community recipes…"
     const val LOADING_RECIPE: String = "Loading recipe…"
     const val CREATING_CONNECTION: String = "Creating connection…"
-    const val LOADING_COOKBOOK: String = "Loading your cookbook…"
+    const val LOADING_COOKBOOK: String = "Loading your public cookbook…"
     const val LOADING_CONTROLS: String = "Loading community controls…"
     const val LOADING_PROFILE: String = "Loading profile…"
     const val PREPARING_COOK_PACK: String = "Preparing Cook Pack…"

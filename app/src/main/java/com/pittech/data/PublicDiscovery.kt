@@ -24,15 +24,41 @@ internal class PublicFailure(val status: Int = 0) : Exception(when(status) {
     429 -> "Too many requests. Wait a minute, then refresh."
     else -> "Couldn't reach community recipes. Your local cookbook is available offline."
 })
-internal data class PublicItem(val id: String,val revisionId: String,val title: String,val kind: String,val credit: String,val likes: Int,val forks: Int,val categoryId: String = FoodCategories.DEFAULT_ID) {
+internal data class PublicItem(val id: String,val revisionId: String,val title: String,val kind: String,val credit: String,val likes: Int,val forks: Int,val categoryId: String = FoodCategories.DEFAULT_ID,val heroAssetId: String? = null) {
     val categoryLabel: String get() = FoodCategories.labelFor(categoryId)
     companion object { fun parse(o: JSONObject): PublicItem {
         // Category is parsed tolerantly: cached pages written before the
         // taxonomy (or by an older server) may carry no category or an
         // unknown id, and those count as Other rather than failing to parse.
-        val item=PublicItem(o.getString("id"),o.getString("revisionId"),o.getString("title"),o.getString("kind"),o.getJSONObject("credit").getString("displayName"),o.getInt("likes"),o.getInt("forks"),FoodCategories.normalizedId(o.optString("category")))
+        // The hero asset id (Slice 5, element 4.1) is likewise tolerant:
+        // a cached page without one simply renders its card photo-less.
+        val item=PublicItem(o.getString("id"),o.getString("revisionId"),o.getString("title"),o.getString("kind"),o.getJSONObject("credit").getString("displayName"),o.getInt("likes"),o.getInt("forks"),FoodCategories.normalizedId(o.optString("category")),o.optString("heroAssetId").takeIf { publicUUID(it) })
         require(publicUUID(item.id) && publicUUID(item.revisionId) && item.title.length in 1..160 && item.credit.length <= 160 && item.kind in setOf("recipe","collection","attempt") && item.likes in 0..1_000_000_000 && item.forks in 0..1_000_000_000);return item
     } }
+}
+/** What a Discover card can honestly show about a publication before
+ * it is opened (Slice 5, element 4.1): the recorded cook's duration
+ * and the pit temperature it ran at, read from the frozen story of
+ * the recipe the hero photo belongs to. A slot is null when the
+ * publication carries no such fact — absence renders as absence. */
+internal data class PublicCardFacts(val timeLabel: String?,val tempLabel: String?)
+internal fun publicCardFacts(detail: PublicDetail,temperatureUnit: String): PublicCardFacts {
+    val heroAssetId=detail.payload.optString("heroAssetId")
+    val recipe=detail.recipes.firstOrNull { r->r.optJSONArray("assets")?.let { a->(0 until a.length()).any { a.getJSONObject(it).optString("id")==heroAssetId } }==true } ?: detail.recipes.firstOrNull()
+    val story=recipe?.optJSONObject("story")
+    val timeLabel=if(story!=null && !story.isNull("foodOnOffsetMillis") && !story.isNull("foodOffOffsetMillis")) {
+        val totalMinutes=(story.getLong("foodOffOffsetMillis")-story.getLong("foodOnOffsetMillis"))/60_000
+        if(totalMinutes>0) { val h=totalMinutes/60;val m=totalMinutes%60;when { h>0 && m>0->"${h}H ${m}M";h>0->"${h}H";else->"${m}M" } } else null
+    } else null
+    val tempLabel=story?.optJSONArray("measurements")?.let { a->
+        val pit=(0 until a.length()).map { a.getJSONObject(it) }.filter { it.optString("role")=="pit" }.map { it.getDouble("valueCelsius") }.sorted()
+        if(pit.isEmpty())null else {
+            val median=if(pit.size%2==1)pit[pit.size/2] else (pit[pit.size/2-1]+pit[pit.size/2])/2.0
+            val display=if(temperatureUnit=="°C")median else median*9.0/5.0+32.0
+            "${Math.round(display)}°"
+        }
+    }
+    return PublicCardFacts(timeLabel,tempLabel)
 }
 /** The Discover request path: the category filter is appended only when a category is selected (empty/null means All). */
 internal fun publicDiscoverPath(sort: String,food: String,query: String,category: String? = null): String {
@@ -126,13 +152,13 @@ internal class PublicCache(context: Context,namespace: String = OnlineConfigurat
         for(old in files.sortedBy { it.lastModified() })if(size>32*1024*1024){val count=old.length();check(old.delete());size-=count}
     }
 }
-internal data class PublicPresentation(val appliedSort: String = "liked",val appliedFood: String = "",val appliedQuery: String = "",val appliedCategory: String = "",val items: List<PublicItem> = emptyList(),val nextCursor: String? = null,val loading: Boolean = false,val message: String? = null,val detailId: String? = null,val detail: PublicDetail? = null,val detailLoading: Boolean = false,val image: ByteArray? = null,val preparing: Boolean = false,val profileHandle: String? = null,val profileName: String? = null,val profileLoading: Boolean = false,val profileItems: List<PublicItem> = emptyList(),val profileCursor: String? = null,val savedDetailId: String? = null)
-internal class PublicManager(private val context: Context,private val scope: CoroutineScope,private val onPreview: suspend (File,Boolean,String,String)->Unit,private val api: PublicAPI = PublicClient(blocks={CommunityVault(context).aliases()},access={CommunityVault(context).publicAccount()?.accessToken}),val enabled: Boolean = OnlineConfiguration.current.enabled,private val cache: PublicCache = PublicCache(context),private val audienceProvider:()->String={CommunityVault(context).audience()}) {
+internal data class PublicPresentation(val appliedSort: String = "liked",val appliedFood: String = "",val appliedQuery: String = "",val appliedCategory: String = "",val items: List<PublicItem> = emptyList(),val nextCursor: String? = null,val loading: Boolean = false,val message: String? = null,val detailId: String? = null,val detail: PublicDetail? = null,val detailLoading: Boolean = false,val image: ByteArray? = null,val preparing: Boolean = false,val profileHandle: String? = null,val profileName: String? = null,val profileLoading: Boolean = false,val profileItems: List<PublicItem> = emptyList(),val profileCursor: String? = null,val savedDetailId: String? = null,val forking: Boolean = false,val forkedRecipes: List<PublicationFork.SavedFork> = emptyList())
+internal class PublicManager(private val context: Context,private val scope: CoroutineScope,private val onPreview: suspend (File,Boolean,String,String)->Unit,private val api: PublicAPI = PublicClient(blocks={CommunityVault(context).aliases()},access={CommunityVault(context).publicAccount()?.accessToken}),val enabled: Boolean = OnlineConfiguration.current.enabled,private val cache: PublicCache = PublicCache(context),private val audienceProvider:()->String={CommunityVault(context).audience()},private val onFork: (suspend (PublicDetail,List<PublicationFork.Tweak>)->List<PublicationFork.SavedFork>)? = null,private val onPlanRecipe: ((String,String)->Unit)? = null) {
     private val _state=MutableStateFlow(PublicPresentation());val state=_state.asStateFlow()
     private val _linkSequence=MutableStateFlow(0L);val linkSequence=_linkSequence.asStateFlow()
     private var profileJob: Job?=null;private var profileReturn: String?=null
     private var pageJob:Job?=null;private var controlsGeneration=0
-    private var pageKey="";private var detailJob: Job?=null;private var downloadJob: Job?=null
+    private var pageKey="";private var detailJob: Job?=null;private var downloadJob: Job?=null;private var forkJob: Job?=null
     private suspend fun cached(path: String): Pair<ByteArray,Boolean> {
         val audience=audienceProvider();val key=audience+"|"+path
         try{
@@ -163,10 +189,70 @@ internal class PublicManager(private val context: Context,private val scope: Cor
             }catch(e: Exception){if(generation!=controlsGeneration)return@launch;_state.value=_state.value.copy(loading=false,message=if(e is CancellationException)"Request canceled." else (e as? PublicFailure)?.message ?: PublicFailure().message);if(e is CancellationException)throw e}
         }
     }
-    fun controlsChanged(){controlsGeneration++;pageJob?.cancel();profileJob?.cancel();detailJob?.cancel();downloadJob?.cancel();pageKey="";_state.value=PublicPresentation(message="Community controls changed. Refresh to browse with your current blocks.")}
+    fun controlsChanged(){controlsGeneration++;pageJob?.cancel();profileJob?.cancel();detailJob?.cancel();downloadJob?.cancel();forkJob?.cancel();pageKey="";_state.value=PublicPresentation(message="Community controls changed. Refresh to browse with your current blocks.")}
     /** PL-19: after a save from a detail, that detail's primary action
      * becomes "Open in Recipes" — the user lands where the thing went. */
     fun markSaved(id: String) { _state.value = _state.value.copy(savedDetailId = id) }
+    /**
+     * Slice 5 (element 4.2): fork the open publication as mine, with
+     * the tweak-lite decisions the sheet collected. No Cook Pack is
+     * downloaded: the ViewModel's handler converts the detail payload
+     * already on the device ([PublicationFork]) and writes it through
+     * the same restore path a pack import confirms into.
+     */
+    fun fork(tweaks: List<PublicationFork.Tweak>){
+        val detail=_state.value.detail ?: return;val handler=onFork ?: return
+        if(!enabled || _state.value.forking)return
+        _state.value=_state.value.copy(forking=true,message=null)
+        forkJob=scope.launch {
+            try{
+                val saved=handler(detail,tweaks)
+                _state.value=_state.value.copy(forking=false,savedDetailId=if(_state.value.detailId==detail.id)detail.id else _state.value.savedDetailId,forkedRecipes=if(_state.value.detailId==detail.id)saved else _state.value.forkedRecipes)
+            }catch(e: Exception){_state.value=_state.value.copy(forking=false,message=if(e is CancellationException)"Canceled. Nothing was added to your cookbook." else "That fork couldn't be saved. Your cookbook is unchanged.");if(e is CancellationException)throw e}
+        }
+    }
+    /**
+     * Slice 5 (element 4.4): "Plan this" on the publication page —
+     * direct Discover→plan-lane seeding. The fork is what brings the
+     * recipe into the library (element 4.2's machinery), so an
+     * unforked publication is forked exactly as written first; the
+     * planner then opens on the forked recipe, pre-filled.
+     */
+    fun planThis(){
+        val detail=_state.value.detail ?: return;val plan=onPlanRecipe ?: return
+        if(_state.value.savedDetailId==detail.id){
+            val first=_state.value.forkedRecipes.firstOrNull()
+            if(first!=null){ plan(first.recipeId,first.revisionId);return }
+        }
+        if(onFork==null || !enabled || _state.value.forking)return
+        _state.value=_state.value.copy(forking=true,message=null)
+        forkJob=scope.launch {
+            try{
+                val saved=onFork.invoke(detail,PublicationFork.untweaked(detail))
+                _state.value=_state.value.copy(forking=false,savedDetailId=detail.id,forkedRecipes=saved)
+                saved.firstOrNull()?.let { plan(it.recipeId,it.revisionId) }
+            }catch(e: Exception){_state.value=_state.value.copy(forking=false,message=if(e is CancellationException)"Canceled. Nothing was added to your cookbook." else "That fork couldn't be saved. Your cookbook is unchanged.");if(e is CancellationException)throw e}
+        }
+    }
+    /** Element 4.1: a Discover card's facts, from the cached detail —
+     * the same fetch opening the publication would make. Null when
+     * the detail can't be read; the card renders without the slots. */
+    suspend fun cardFacts(item: PublicItem,temperatureUnit: String): PublicCardFacts? {
+        try{return publicCardFacts(detailForReview(item.id).first,temperatureUnit)}
+        catch(e: CancellationException){throw e}
+        catch(e: Exception){return null}
+    }
+    /** Element 4.1: a Discover card's hero photo — hash-verified
+     * through the same image path the detail view uses. */
+    suspend fun cardImage(item: PublicItem): ByteArray? {
+        val heroId=item.heroAssetId ?: return null
+        try{
+            val detail=detailForReview(item.id).first
+            val media=detail.media.firstOrNull { it.getString("id")==heroId } ?: return null
+            return image(item.id,media)
+        }catch(e: CancellationException){throw e}
+        catch(e: Exception){return null}
+    }
     fun receivePublic(input: String): Boolean {
         if(!enabled)return false
         val destination=runCatching { PublicLink.destination(input) }.getOrNull() ?: return false
@@ -192,7 +278,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
                     try {
                         val raw=JSONObject(String(api.json("/v1/recipes/$id"),Charsets.UTF_8));val detail=PublicDetail.parse(raw)
                         require(detail.id==id && detail.payload.getString("identityMode")=="named")
-                        items+=PublicItem(id,detail.revisionId,detail.title,detail.payload.getString("kind"),detail.credit,raw.getInt("likes"),raw.getInt("forks"),FoodCategories.normalizedId(detail.payload.optString("category")))
+                        items+=PublicItem(id,detail.revisionId,detail.title,detail.payload.getString("kind"),detail.credit,raw.getInt("likes"),raw.getInt("forks"),FoodCategories.normalizedId(detail.payload.optString("category")),detail.payload.optString("heroAssetId").takeIf { publicUUID(it) })
                     } catch(e: PublicFailure) { if(e.status!=404)throw e }
                 }
                 val next=if(json.isNull("nextCursor"))null else json.getString("nextCursor");require(next==null || publicUUID(next));ensureActive()
@@ -230,7 +316,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         val returning=profileReturn;profileReturn=null
         if(_state.value.detailId!=null && returning!=null){openProfile(returning);return}
         profileJob?.cancel();_state.value=_state.value.copy(profileHandle=null,profileName=null,profileLoading=false,profileItems=emptyList(),profileCursor=null)
-        detailJob?.cancel();downloadJob?.cancel();_state.value=_state.value.copy(detailId=null,detail=null,detailLoading=false,image=null,preparing=false,message=null)}
+        detailJob?.cancel();downloadJob?.cancel();forkJob?.cancel();_state.value=_state.value.copy(detailId=null,detail=null,detailLoading=false,image=null,preparing=false,forking=false,forkedRecipes=emptyList(),message=null)}
     fun preview(cook: Boolean){
         val detail=_state.value.detail ?: return;if(!enabled || _state.value.preparing)return
         _state.value=_state.value.copy(preparing=true,message=null)

@@ -176,7 +176,7 @@ internal fun PitTechApp(
     if(communitySettings)CommunityControlsDialog(viewModel.communityControls,viewModel.account,viewModel.publicDiscovery){communitySettings=false}
     var myCookbook by rememberSaveable { mutableStateOf(false) }
     if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
-    // PL-18: a completed publication asks to land in My Cookbook.
+    // PL-18: a completed publication asks to land in the public cookbook.
     val cookbookOpenRequests by viewModel.cookbookOpenRequests.collectAsStateWithLifecycle()
     LaunchedEffect(cookbookOpenRequests) { if (cookbookOpenRequests > 0) myCookbook = true }
     RelayImportDialog(viewModel)

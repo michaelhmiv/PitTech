@@ -48,6 +48,52 @@ object PlanSeeding {
         )
     }
 
+    /**
+     * Slice 5 (element 4.4): the same seeding for a recipe whose durations
+     * live in its own frozen story rather than a local source cook — a
+     * forked publication above all. The snapshot's observations are the
+     * source cook's recorded milestones pinned to the smoking anchor
+     * (food-on), so the lane's numbers are read off them with the
+     * provenance definitions mirrored exactly: total = dish done (or
+     * removal) minus food-on, rest = rest start to dish done when both
+     * were recorded. A snapshot with no anchor or no off-the-pit
+     * milestone recorded nothing honest to seed from and seeds nothing.
+     */
+    fun fromSnapshotStory(snapshot: RecipeSnapshot): SeededLane? {
+        val anchor = snapshot.smokingAnchorUtcMillis ?: return null
+        fun offsetOf(observation: RecipeObservation): Long =
+            observation.offsetMillis ?: (observation.occurredAtUtcMillis - anchor)
+        val done = snapshot.observations.lastOrNull { it.action == "dish_done" }
+        val end = done ?: snapshot.observations.lastOrNull { it.action == "remove" } ?: return null
+        val totalMillis = offsetOf(end)
+        if (totalMillis <= 0) return null
+        val total = (totalMillis / 60_000.0).roundToLong()
+        val restStart = snapshot.observations.lastOrNull { it.action == "rest_start" }
+        val rest = if (restStart != null && done != null) {
+            ((offsetOf(done) - offsetOf(restStart)).coerceAtLeast(0) / 60_000.0).roundToLong()
+        } else 0
+        val note = buildString {
+            val credit = snapshot.publicSource?.displayName
+            if (credit != null) append("Durations from $credit's recorded cook — ")
+            else append("Seeded from this recipe's recorded cook — ")
+            append("${formatDuration(total)} on the pit")
+            if (restStart != null && done != null) append(", ${formatDuration(rest)} rest")
+            append(" (adjust anytime in the plan)")
+        }
+        return SeededLane(
+            dish = snapshot.dish,
+            schedule = DishSchedule(
+                dishIndex = 0, // the caller assigns the lane's real index
+                cookMinMinutes = total,
+                cookMaxMinutes = total,
+                restMinutes = rest,
+                pitF = snapshot.preferredPitTemperatureF,
+                evidenceCount = 1,
+                evidenceNote = note,
+            ),
+        )
+    }
+
     /** "9 h 38 min" / "45 min" / "2 h" — the note's duration voice. */
     fun formatDuration(minutes: Long): String {
         val hours = minutes / 60

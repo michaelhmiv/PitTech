@@ -27,6 +27,21 @@ import org.json.JSONObject
     var query by rememberSaveable { mutableStateOf(state.appliedQuery) }
     var food by rememberSaveable { mutableStateOf(state.appliedFood) }
     var managingControls by remember{mutableStateOf(false)}
+    var showFork by remember{mutableStateOf(false)}
+    var forkInFlight by remember{mutableStateOf(false)}
+    // The tweak sheet closes when its fork lands; a failure leaves it
+    // open with the error showing, tweaks intact. Keyed on the saved
+    // state itself, not just the forking transition: a fast fork can
+    // start and finish between compositions, and a transition-only
+    // observer never sees it end (the chain flow test caught the
+    // sheet hanging open on exactly that race).
+    LaunchedEffect(state.forking,state.savedDetailId) {
+        if(forkInFlight && !state.forking && state.savedDetailId!=null && state.savedDetailId==state.detailId) {
+            forkInFlight=false
+            showFork=false
+        }
+    }
+    LaunchedEffect(state.detailId) { if(state.detailId==null)showFork=false }
     var sort by rememberSaveable { mutableStateOf(state.appliedSort) }
     var category by rememberSaveable { mutableStateOf(state.appliedCategory) }
     LaunchedEffect(manager) { if(state.items.isEmpty())manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery,state.appliedCategory) }
@@ -36,7 +51,7 @@ import org.json.JSONObject
         // with the cached content below unchanged.
         if(!rememberOnlineState())TurnInStatusStrip(OfflineCopy.CHANGES_WAIT,pitTechTokens().cobalt,Modifier.testTag("discover-offline"))
         if(controls!=null && account!=null)OutlinedButton(onClick={managingControls=true},modifier=Modifier.heightIn(min=48.dp)) { Text("Community controls") }
-        if(state.profileHandle != null) { PublicProfileContent(manager,state) } else if(state.detailId != null) {
+        if(state.profileHandle != null) { PublicProfileContent(manager,state,temperatureUnit) } else if(state.detailId != null) {
             TextButton(onClick={ manager.back() }) { Text("Back to Discover") }
             if(state.detailLoading) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.LOADING_RECIPE) }
             state.detail?.let { detail ->
@@ -48,19 +63,31 @@ import org.json.JSONObject
                 }
                 Text(detail.title,Modifier.testTag("public-title"),style=PitTechTextStyles.bannerTitle)
                 Text("Shared by ${detail.credit}",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+                // Slice 5 (Spread 04, step 2): the publication's own
+                // numbers — stars and forks as the book draws them,
+                // plus its category. Counts appear only when the
+                // response carried them (§4.5's slot rule).
+                Text(listOfNotNull(detail.likes?.let { "★ $it" },detail.forks?.let { "⑂ $it" },com.pittech.domain.FoodCategories.labelFor(com.pittech.domain.FoodCategories.normalizedId(detail.payload.optString("category")))).joinToString(" · "),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
                 detail.profileUrl?.let { url->TextButton(onClick={manager.openProfile(com.pittech.data.PublicLink.destination(url).substringAfter(':'))}) { Text("View public cookbook") } }
-                if(account?.enabled==true && publicationWriter!=null)PublicLikeActions(detail.id,account,publicationWriter)
+                if(account?.enabled==true && publicationWriter!=null)PublicStarActions(detail.id,account,publicationWriter)
                 if(controls!=null && account!=null)CommunityActions(detail,controls,account,manager)
                 Text("Your saved version stays yours. Publishing a variation is a separate choice.",style=MaterialTheme.typography.bodyMedium,color=pitTechTokens().inkMuted)
                 if(state.savedDetailId == detail.id) {
-                    // PL-19: after Save, the primary lands where the thing
-                    // went — the saved recipes in Recipes.
+                    // PL-19: after a save, the primary lands where the
+                    // thing went — the saved recipes in Recipes.
                     Button(onClick=onOpenRecipes,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-open-recipes")) { Text("Open in Recipes") }
-                    OutlinedButton(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
-                } else {
-                    Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
                 }
-                OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }
+                // Slice 5 (element 4.2/4.4): Star and Fork are the
+                // actions on this page, by those names — Fork saves as
+                // mine from the payload on device, no Cook Pack
+                // download. "Plan this" forks as written if needed and
+                // opens the planner on the fork (direct seeding).
+                Row(horizontalArrangement=Arrangement.spacedBy(10.dp),modifier=Modifier.fillMaxWidth()) {
+                    Button(onClick={ showFork=true },enabled=!state.forking && !state.preparing,modifier=Modifier.weight(1f).heightIn(min=48.dp).testTag("public-fork")) { Text("Fork") }
+                    OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing && !state.forking,modifier=Modifier.weight(1f).heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }
+                }
+                OutlinedButton(onClick={ manager.planThis() },enabled=!state.forking && !state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-plan-this")) { Text("Plan this") }
+                if(state.forking) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text("Saving your version…") } }
                 if(state.preparing) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.DOWNLOADING_COOK_PACK) }; TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
                 detail.recipes.forEach { recipe ->
                     TurnInCard(Modifier.fillMaxWidth()) {
@@ -91,10 +118,14 @@ import org.json.JSONObject
             OutlinedButton(onClick={ manager.open(state.detailId!!) },enabled=!state.detailLoading && !state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("Refresh preview") }
         } else {
             Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                TurnInMetaLabel("Public cookbook")
+                // Slice 5 (element 4.5): Discover is the community
+                // shelf — "Public cookbook" names the storefront a
+                // cook publishes from, and "My Cookbook" is the user's
+                // own library. Neither word belongs on this header.
+                TurnInMetaLabel("Community cooks")
                 Text("Find your next cook",style=PitTechTextStyles.bannerTitle)
             }
-            Text("Browse, save and cook without an account. Saving makes your own private copy.",style=MaterialTheme.typography.bodyMedium,color=pitTechTokens().inkMuted)
+            Text("Browse, star and fork without an account. Forking makes your own private copy.",style=MaterialTheme.typography.bodyMedium,color=pitTechTokens().inkMuted)
             TurnInLiteralBoxedField("Search recipes",Modifier.fillMaxWidth()) {
                 OutlinedTextField(query,{query=it.take(80)},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("discover-query"))
             }
@@ -123,20 +154,48 @@ import org.json.JSONObject
                 }
             }
             state.items.forEach { item ->
-                TurnInCard(Modifier.fillMaxWidth().testTag("discover-open-${item.id}"),onClick={ manager.open(item.id) }) {
-                    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text(item.title,style=PitTechTextStyles.bannerCard)
-                        Text(item.credit,style=MaterialTheme.typography.bodyMedium)
-                        Text("${item.categoryLabel} · ${item.likes} likes · ${item.forks} forks",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
-                    }
-                }
+                DiscoverCard(manager,item,temperatureUnit) { manager.open(item.id) }
             }
             if(state.nextCursor != null)OutlinedButton(onClick={ manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery,state.appliedCategory,more=true) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("More recipes") }
         }
     }
     if(managingControls && controls!=null && account!=null)CommunityControlsDialog(controls,account,manager){managingControls=false}
+    if(showFork)state.detail?.let { detail->
+        PublicationForkSheet(detail,busy=state.forking,error=if(state.forking)null else state.message,onDismiss={ showFork=false },onSave={ tweaks->forkInFlight=true;manager.fork(tweaks) })
+    }
 }
 private fun JSONObject.rows(key: String)=getJSONArray(key).let { array->(0 until array.length()).map(array::getJSONObject) }
+
+/**
+ * Slice 5, element 4.1: a Discover card you can browse by — the
+ * publication's photo, and the recorded cook's time and pit temp
+ * when its story carries them (§4.5's slot rule: a slot appears only
+ * when its data is real). Facts and photo load through the manager's
+ * cached, hash-verified paths — the same fetch opening the
+ * publication makes — so a card never shows an unverified image or
+ * an invented number.
+ */
+@Composable internal fun DiscoverCard(manager: PublicManager,item: com.pittech.data.PublicItem,temperatureUnit: String,onOpen: () -> Unit) {
+    var facts by remember(item.id) { mutableStateOf<com.pittech.data.PublicCardFacts?>(null) }
+    var photo by remember(item.id) { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(item.id,temperatureUnit) {
+        facts=manager.cardFacts(item,temperatureUnit)
+        photo=manager.cardImage(item)
+    }
+    TurnInCard(Modifier.fillMaxWidth().testTag("discover-open-${item.id}"),onClick=onOpen) {
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            photo?.let { bytes->
+                val bitmap=remember(bytes) { BitmapFactory.decodeByteArray(bytes,0,bytes.size) }
+                if(bitmap!=null)Image(bitmap.asImageBitmap(),"Photo for ${item.title}",Modifier.fillMaxWidth().heightIn(max=180.dp))
+            }
+            Text(item.title,style=PitTechTextStyles.bannerCard)
+            Text(item.credit,style=MaterialTheme.typography.bodyMedium)
+            val factsLine=listOfNotNull(facts?.timeLabel,facts?.tempLabel).joinToString(" · ")
+            if(factsLine.isNotEmpty())Text(factsLine,style=PitTechTextStyles.monoMeta,modifier=Modifier.testTag("discover-card-facts-${item.id}"))
+            Text("${item.categoryLabel} · ★ ${item.likes} · ⑂ ${item.forks}",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+        }
+    }
+}
 
 /** Shared TURN-IN chip colors for this area: marigold fill when selected. */
 @Composable internal fun turnInChipColors() = FilterChipDefaults.filterChipColors(

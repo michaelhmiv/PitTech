@@ -89,7 +89,7 @@ internal class PublicationOperationsStore(val directory: File) {
     }
     fun pending(user: String): PublicationOperation? = synchronized(lock) { load(user).optJSONObject("pending")?.let(PublicationOperation::parse) }
     fun binding(user: String, draft: String): PublicationReceipt? = synchronized(lock) { load(user).getJSONObject("bindings").optJSONObject(draft)?.let(PublicationReceipt::parse) }
-    /** The local draft a publication was posted from, if this device holds it (Flowing §4.5: My Cookbook's share-card door). */
+    /** The local draft a publication was posted from, if this device holds it (Flowing §4.5: the public cookbook's share-card door). */
     fun bindingForItem(user: String, itemId: String): Pair<String, PublicationReceipt>? = synchronized(lock) {
         val bindings = load(user).getJSONObject("bindings")
         bindings.keys().asSequence().firstOrNull { draft -> bindings.optJSONObject(draft)?.optString("id") == itemId }

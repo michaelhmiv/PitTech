@@ -32,7 +32,7 @@ import org.json.JSONObject
     var cardShare by remember { mutableStateOf<Pair<String,ShareCardPublication>?>(null) }
     val context=androidx.compose.ui.platform.LocalContext.current
     var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }; var signingIn by remember { mutableStateOf(false) }
-    suspend fun checkAccount() { check(loadedUser!=null && loadedUser==account.publicationUserId()) { "Sign in with the account that opened this cookbook." } }
+    suspend fun checkAccount() { check(loadedUser!=null && loadedUser==account.publicationUserId()) { "Sign in with the account that opened this public cookbook." } }
     suspend fun pendingPreview() {
         pending=writer.pending(); pendingArchive=null; pendingProfile=null
         pending?.let { op ->
@@ -61,14 +61,18 @@ import org.json.JSONObject
     }
     LaunchedEffect(state.signedIn) {
         loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; profileReviewStatus=null; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null; ownerPreview=null; ownerReceipt=null; ownerUser=null; editingDraft=null; cardShare=null
-        if(loadedUser!=null)try { reload() } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Your cookbook on this device is unchanged.") }
+        if(loadedUser!=null)try { reload() } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Your public cookbook is unchanged.") }
     }
     if(editingDraft==null)ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest={ if(!busy && editingDraft==null)onClose() }) {
         val focus=androidx.compose.ui.platform.LocalFocusManager.current
         val keyboard=androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         fun submit(action: suspend () -> Unit) { focus.clearFocus(); keyboard?.hide(); run(action) }
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Row { Text("My cookbook",style=PitTechTextStyles.bannerTitle,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
+            // Slice 5 (element 4.5): this sheet is the public
+            // storefront — identity, handle, publications. "My
+            // Cookbook" names the user's own library (Recipes), so
+            // the storefront carries its public name here.
+            Row { Text("Public cookbook",style=PitTechTextStyles.bannerTitle,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
             Column(Modifier.weight(1f).verticalScroll(contentScroll),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                 if(!state.signedIn) {
                     Text("Your public cookbook and publications belong to your signed-in account. Your private library stays on this device.")
@@ -78,7 +82,7 @@ import org.json.JSONObject
                         Text(if(op.rejected)"Rejected change" else "Saved interrupted change",style=PitTechTextStyles.bannerCard)
                         pendingArchive?.let { PublicationContent(it) }; pendingProfile?.let { CookbookProfileSummary(it) }
                         if(pendingArchive==null && pendingProfile==null) {
-                            Text(if(op.path.endsWith("/like")) { if(op.method=="POST")"Add your like to this recipe" else "Remove your like from this recipe" } else "Remove this publication from public access")
+                            Text(if(op.path.endsWith("/like")) { if(op.method=="POST")"Add your star to this recipe" else "Remove your star from this recipe" } else "Remove this publication from public access")
                             val parts=op.path.split('/'); if(parts.size>=4)TextButton(onClick={ uri.openUri("https://pittech.app/c/"+parts[3]) }) { Text("View affected recipe") }
                         }
                         if(!op.rejected)Button(onClick={ submit { checkAccount(); writer.recover(); reload() } },enabled=!busy,modifier=Modifier.testTag("cookbook-recover")) { Text("Retry this exact change") }
@@ -96,7 +100,7 @@ import org.json.JSONObject
                         } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-create-editing-draft")) { Text("Create private editing draft") }
                         TextButton(onClick={ ownerPreview=null;ownerReceipt=null;ownerUser=null },enabled=!busy) { Text("Cancel editing preview") }
                     } }
-                    Text("Cookbook identity",style=PitTechTextStyles.bannerCard)
+                    Text("Public identity",style=PitTechTextStyles.bannerCard)
                     TurnInLiteralBoxedField("Display name",Modifier.fillMaxWidth()) {
                         OutlinedTextField(name,{ name=it; preview=null },singleLine=true,modifier=Modifier.fillMaxWidth().testTag("cookbook-name"))
                     }
@@ -106,7 +110,7 @@ import org.json.JSONObject
                     if(profileReviewStatus=="pending")TurnInStatusStrip("Identity changes are awaiting review and are not yet public.",pitTechTokens().marigold)
                     Row { Checkbox(isPublic,{ isPublic=it; preview=null },modifier=Modifier.testTag("cookbook-public")); Text("Enable my public cookbook",Modifier.weight(1f)) }
                     Text("Named publications show your display name. Only named publications appear in an enabled public cookbook; anonymous publications stay separate.",color=pitTechTokens().inkMuted)
-                    Button(onClick={ submit { require(handle.isEmpty() || handle.matches(Regex("[A-Za-z0-9_]{3,24}"))) { "Choose a handle with 3–24 letters, numbers or underscores." }; require(name.length<=160 && name.none { it.code<32 || it.code==127 } && (!isPublic || handle.isNotEmpty() && name.isNotBlank())) { "Choose a display name and handle before enabling your public cookbook." }; preview=JSONObject().put("handle",handle.takeIf { it.isNotEmpty() }?.lowercase(java.util.Locale.ROOT) ?: JSONObject.NULL).put("displayName",name.trim()).put("isPublic",isPublic) } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-preview")) { Text("Preview cookbook changes") }
+                    Button(onClick={ submit { require(handle.isEmpty() || handle.matches(Regex("[A-Za-z0-9_]{3,24}"))) { "Choose a handle with 3–24 letters, numbers or underscores." }; require(name.length<=160 && name.none { it.code<32 || it.code==127 } && (!isPublic || handle.isNotEmpty() && name.isNotBlank())) { "Choose a display name and handle before enabling your public cookbook." }; preview=JSONObject().put("handle",handle.takeIf { it.isNotEmpty() }?.lowercase(java.util.Locale.ROOT) ?: JSONObject.NULL).put("displayName",name.trim()).put("isPublic",isPublic) } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-preview")) { Text("Preview changes") }
                     preview?.let { profile -> CookbookProfileSummary(profile)
                         Button(onClick={ submit { checkAccount(); writer.json("PUT","/v1/me/profile",profile); preview=null; reload() } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-save")) { Text("Save previewed changes") }
                     }
@@ -138,7 +142,7 @@ import org.json.JSONObject
                         if(status in setOf("active","pending_review"))TextButton(onClick={ removing=item },enabled=!busy && pending==null) { Text(if(status=="pending_review")"Withdraw review request" else "Remove from public access") }
                     } } }
                     if(cursor!=null)Button(onClick={ submit { loadItems(true) } },enabled=!busy) { Text("More publications") }
-                    Button(onClick={ submit { reload() } },enabled=!busy) { Text("Refresh cookbook") }
+                    Button(onClick={ submit { reload() } },enabled=!busy) { Text("Refresh") }
                 }
                 if(busy)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_COOKBOOK)}; message?.let { TurnInStatusStrip(it,pitTechTokens().flag,Modifier.testTag("cookbook-message")) }; Spacer(Modifier.height(24.dp))
             }
@@ -153,7 +157,7 @@ import org.json.JSONObject
     // AccountContent is itself the scrolling container: wrapping it in a
     // second verticalScroll here measured it with infinite height and
     // crashed (issue #233). The sheet wrapper must not scroll.
-    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") }}}
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to public cookbook") }}}
 }
 @Composable private fun CookbookProfileSummary(profile: JSONObject) {
     TurnInCard(Modifier.fillMaxWidth()) { Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
