@@ -164,12 +164,12 @@ import XCTest
         let (detail, _) = try await community.detail(id)
         // The sheet's prefill: renamed, the story's last food temperature
         // (72.2 °C) becomes the target in the reader's unit.
-        var tweaks = PublicationFork.prefill(detail)
+        var tweaks = detail.recipes.indices.map { PublicationFork.prefill(detail: detail, recipeIndex: $0) }
         XCTAssertEqual(tweaks.count, 2)
         XCTAssertEqual(tweaks[0].name, "Oak-smoked pork shoulder — my version")
         XCTAssertEqual(tweaks[0].targetF, 162)
         XCTAssertTrue(tweaks[0].targetFromStory)
-        XCTAssertEqual(PublicationFork.untweaked(detail)[0].name, "Oak-smoked pork shoulder")
+        XCTAssertEqual(PublicationFork.untweaked(detail: detail)[0].name, "Oak-smoked pork shoulder")
         tweaks[0].rub = "House rub"; tweaks[0].wrap = .foil; tweaks[0].targetF = 165
         let prepared = try PublicationFork.prepare(detail: detail, tweaks: tweaks)
         XCTAssertEqual(prepared.count, 2)
@@ -203,7 +203,7 @@ import XCTest
         let potatoes = prepared[1]
         XCTAssertNil(potatoes.frozenStory.objectValue?["publicStory"])
         XCTAssertTrue(potatoes.photoMediaIds.isEmpty)
-        let plain = try PublicationFork.prepare(detail: detail, tweaks: PublicationFork.untweaked(detail))
+        let plain = try PublicationFork.prepare(detail: detail, tweaks: PublicationFork.untweaked(detail: detail))
         XCTAssertEqual(plain[0].changeNotes, "Saved public recipe")
         XCTAssertEqual(plain[0].snapshot.name, "Oak-smoked pork shoulder")
     }
@@ -216,7 +216,7 @@ import XCTest
         let community = NativePublicCoordinator(enabled: true, api: PublicTestAPI(fixture: fixture), cache: NativePublicCache(directory: root.appendingPathComponent("cache")))
         let id = (fixture["detail"] as! [String: Any])["id"] as! String
         let (detail, _) = try await community.detail(id)
-        var tweaks = PublicationFork.prefill(detail)
+        var tweaks = detail.recipes.indices.map { PublicationFork.prefill(detail: detail, recipeIndex: $0) }
         tweaks[0].rub = "House rub"; tweaks[0].wrap = .foil; tweaks[0].targetF = 165
         let saved = try await community.fork(detail, tweaks: tweaks, store: store)
         XCTAssertEqual(saved.count, 2)

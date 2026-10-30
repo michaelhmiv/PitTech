@@ -431,7 +431,7 @@ enum PublicationFork {
                   let revisionId = store.recipe(first)?["currentRevisionId"]?.stringValue else { return false }
             return store.planRecipe(recipeId: first, revisionId: revisionId)
         } catch {
-            message = error.localizedDescription
+            surfaceError(error)
             return false
         }
     }

@@ -260,11 +260,11 @@ struct SavedRecipeDetailView: View {
                    let provenance = store.recipeProvenance(sourceCookId: revision["sourceCookId"]?.stringValue, sourceDishId: revision["sourceDishId"]?.stringValue),
                    provenance.sourceCookId == revision["sourceCookId"]?.stringValue,
                    store.library.cooks.contains(where: { $0.id == provenance.sourceCookId }) {
-                    RecipeStoryBlock(provenance: provenance, onPlanThis: {
-                        store.planRecipe(recipeId: recipeId, revisionId: revisionId)
-                    }) {
+                    RecipeStoryBlock(provenance: provenance, onCookAgain: {
                         act { startSetup = try store.recipeStartSetup(title: recipe["name"]?.stringValue ?? "New meal", revisionIds: [revisionId], sourceLabel: "From your Recipes · saved recipes stay attached to their dishes") }
-                    }
+                    }, onPlanThis: {
+                        store.planRecipe(recipeId: recipeId, revisionId: revisionId)
+                    })
                 }
                 // The scoreboard row: pit temperature, serves, and the
                 // first recorded target — the same cells Android's detail

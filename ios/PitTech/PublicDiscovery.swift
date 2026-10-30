@@ -193,6 +193,9 @@ actor NativePublicCache {
         } catch { if generation == controlsGeneration { message = error.localizedDescription } }
     }
     func controlsChanged(dismissPublic: Bool = true) { controlsGeneration += 1; items = []; nextCursor = nil; currentKey = ""; if dismissPublic { path = [] }; message = "Community controls changed. Refresh to browse with your current blocks." }
+    /// Errors from flows that live outside this file (Slice 5's fork /
+    /// plan-this) surface on the same message line as browsing errors.
+    func surfaceError(_ error: Error) { message = error.localizedDescription }
     func detail(_ id: String) async throws -> (NativePublicDetail, Bool) {
         guard enabled, UUID(uuidString: id) != nil else { throw NativePublicError.invalid }
         let (bytes, saved) = try await cached("/v1/recipes/" + id); let detail = try JSONDecoder().decode(NativePublicDetail.self, from: bytes); try detail.validate(); guard detail.id == id else { throw NativePublicError.invalid }; return (detail, saved)
