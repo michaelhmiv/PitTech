@@ -7,7 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -83,7 +83,7 @@ import org.json.JSONObject
                     Text("Retry uses the exact saved content and the same account. Editing the sharing draft won't change this request.",color=pitTechTokens().inkMuted)
                     prepared?.let { PublicationContent(it) }
                     if(op.draftId==draft && prepared!=null && !op.rejected)Button(onClick={ run { writer.recover(); prepared=null; refreshPending(); message="The saved publication was recovered." } },enabled=!busy,modifier=Modifier.testTag("publication-recover")) { Text("Retry the saved publication") }
-                    if(op.draftId!=draft)Text("Recover the saved account or publication change in My cookbook first.")
+                    if(op.draftId!=draft)Text("Recover the saved account or publication change in Public cookbook first.")
                     if(op.rejected) {
                         Text("Review the current publication before making a new preview. A rejection did not apply this request.")
                         TextButton(onClick={ run { withContext(Dispatchers.IO) { writer.store.discardRejected(checkNotNull(account.publicationUserId())) }; prepared=null; refreshPending() } },enabled=!busy) { Text("Discard rejected request") }
@@ -91,7 +91,7 @@ import org.json.JSONObject
                 } else if(published!=null) {
                     Text(if(published!!.status=="pending_review")"Submitted for review" else "Published",style=PitTechTextStyles.bannerTitle,modifier=Modifier.testTag("publication-complete"))
                     val uri=androidx.compose.ui.platform.LocalUriHandler.current
-                    if(published!!.status=="pending_review")Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.")
+                    if(published!!.status=="pending_review")Text("This revision becomes public after its text and selected photos pass review. Check Public cookbook for its status.")
                     else {
                         Button(onClick={ uri.openUri(published!!.url) }) { Text("Open public recipe") }
                         // §4.5: the posted-recipe card, straight from the
@@ -99,14 +99,17 @@ import org.json.JSONObject
                         OutlinedButton(onClick={ postedCard=true },enabled=!busy,modifier=Modifier.testTag("publication-share-card")) { Text("Share posted card") }
                     }
                     // J9: after publishing, the next step lands where the
-                    // thing went — My Cookbook — not back at the draft.
-                    OutlinedButton(onClick={ onClose(); viewModel.requestCookbookOpen() },enabled=!busy,modifier=Modifier.testTag("publication-open-cookbook")) { Text("Open My cookbook") }
+                    // thing went — the public cookbook — not back at the
+                    // draft. (Slice 5's naming audit: the storefront is
+                    // "Public cookbook"; "My Cookbook" is the user's own
+                    // library in Recipes.)
+                    OutlinedButton(onClick={ onClose(); viewModel.requestCookbookOpen() },enabled=!busy,modifier=Modifier.testTag("publication-open-cookbook")) { Text("Open public cookbook") }
                     Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
                 } else {
                     val kindLabels=mapOf("recipe" to "Recipe","collection" to "Meal collection","attempt" to "Actual recorded cook")
                     SimpleDropdownField("Publication",kindLabels.getValue(kind),kindLabels.values.toList(),{ label -> kind=kindLabels.entries.first { it.value==label }.key; invalidate() },enabled=!busy)
                     SimpleDropdownField("Public credit",if(identity=="anonymous")"Anonymous · a PitTech cook" else "My display name",listOf("Anonymous · a PitTech cook","My display name"),{ identity=if(it=="My display name")"named" else "anonymous"; invalidate() },enabled=!busy)
-                    Text(if(identity=="anonymous")"Your profile name and cookbook link won't appear on this publication." else "Your current display name appears publicly. Your cookbook link appears only while your public cookbook is enabled.",color=pitTechTokens().inkMuted)
+                    Text(if(identity=="anonymous")"Your profile name and public cookbook link won't appear on this publication." else "Your current display name appears publicly. Your public cookbook link appears only while your public cookbook is enabled.",color=pitTechTokens().inkMuted)
                     CategoryDropdownField(category,enabled=!busy) { category=it; invalidate() }
                     if(linked!=null)Row { Checkbox(updating,{ updating=it; invalidate() },enabled=!busy); Text("Update the publication linked to this draft",Modifier.weight(1f)) }
                     Button(onClick={ run {
@@ -227,25 +230,28 @@ import org.json.JSONObject
 private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 until array.length()).map(array::getJSONObject) }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun PublicLikeActions(id: String, account: AccountManager, writer: PublicationWriter) {
+@Composable internal fun PublicStarActions(id: String, account: AccountManager, writer: PublicationWriter) {
     val state by account.presentation.collectAsStateWithLifecycle(); val scope=rememberCoroutineScope()
     var busy by remember(id) { mutableStateOf(false) }; var signingIn by remember { mutableStateOf(false) }; var message by remember(id) { mutableStateOf<String?>(null) }
     // Slice 8 (PL-15 / DD-10): sign-in completion closes the account
     // dialog and returns here automatically, like the publication sheet.
     LaunchedEffect(state.signedIn) { message=null; if(state.signedIn) signingIn=false }
-    fun set(liked: Boolean) { if(busy)return; busy=true; scope.launch {
-        try { writer.json(if(liked)"POST" else "DELETE","/v1/recipes/$id/like"); message=if(liked)"Your like is saved." else "Your like is removed." }
-        catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=ErrorCopy.failureText(e, "Couldn't reconnect.")+" Recover interrupted changes in My cookbook." } finally { busy=false }
+    fun set(starred: Boolean) { if(busy)return; busy=true; scope.launch {
+        try { writer.json(if(starred)"POST" else "DELETE","/v1/recipes/$id/like"); message=if(starred)"Your star is saved." else "Your star is removed." }
+        catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=ErrorCopy.failureText(e, "Couldn't reconnect.")+" Recover interrupted changes in Public cookbook." } finally { busy=false }
     } }
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        // §7 disposition: the Like is a placard, not a text button. The app
-        // carries no local like state or count on this surface, so the
-        // placard keeps the existing copy; Remove stays a quiet button.
+        // Slice 5 (element 4.2): the action is named Star — the book's
+        // word for the like this placard has always recorded. The
+        // endpoint and the durable operation are unchanged (no route
+        // renames, element 4.5); only the label the cook sees moved.
+        // The app carries no local star state or count on this surface,
+        // so the placard keeps the placard form; Remove stays quiet.
         if(state.signedIn) {
-            TurnInPlacard(icon=Icons.Filled.Favorite,label="Like this recipe",onClick={ set(true) },modifier=Modifier.fillMaxWidth(),testTag="public-like",enabled=!busy)
-            TextButton(onClick={ set(false) },enabled=!busy,modifier=Modifier.testTag("public-unlike")) { Text("Remove my like") }
+            TurnInPlacard(icon=Icons.Filled.Star,label="Star this recipe",onClick={ set(true) },modifier=Modifier.fillMaxWidth(),testTag="public-star",enabled=!busy)
+            TextButton(onClick={ set(false) },enabled=!busy,modifier=Modifier.testTag("public-unstar")) { Text("Remove my star") }
         } else {
-            TextButton(onClick={ signingIn=true }) { Text("Sign in to like this recipe") }; Text("Signing in won't add a like automatically.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
+            TextButton(onClick={ signingIn=true }) { Text("Sign in to star this recipe") }; Text("Signing in won't add a star automatically.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
         }
         message?.let { Text(it) }
     }

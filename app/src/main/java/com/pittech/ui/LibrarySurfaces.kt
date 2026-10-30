@@ -77,7 +77,7 @@ import androidx.compose.ui.unit.dp
         // sync status so it is visible without opening the sheet.
         if (onAccount != null) MoreDestination("Account", accountSubtitle, Icons.Filled.Person, "more-account", onAccount)
         if (onCommunity != null) MoreDestination("Community controls", "Reports, saved requests and blocked publishers", Icons.Filled.Person, "more-community-controls", onCommunity)
-        if (onCookbook != null) MoreDestination("My cookbook", "Public identity, publications and interrupted changes", Icons.Filled.Person, "more-cookbook", onCookbook)
+        if (onCookbook != null) MoreDestination("Public cookbook", "Public identity, publications and interrupted changes", Icons.Filled.Person, "more-cookbook", onCookbook)
         MoreDestination("Settings & support", "Appearance, units, data and feedback", Icons.Filled.Settings, "more-settings", onSettings)
         MoreDestination("Import by code", "Preview a shared Cook Pack without an account", Icons.Filled.Explore, "more-relay-import", onImportCode)
         MoreDestination("My shared codes", "Renew or revoke codes created on this device", Icons.Filled.Explore, "more-relay-owned", onSharedCodes)

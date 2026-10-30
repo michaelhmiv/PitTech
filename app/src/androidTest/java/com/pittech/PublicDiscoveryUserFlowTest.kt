@@ -34,10 +34,13 @@ import java.util.Base64
         waitFor("nav-discover");compose.onNodeWithTag("nav-discover").performClick()
         val id=f.getJSONObject("detail").getString("id");waitFor("discover-open-$id");compose.onNodeWithTag("discover-open-$id").performScrollTo().performClick()
         waitFor("public-title");shot("public-detail")
-        compose.onNodeWithTag("public-save").performScrollTo().performClick();waitFor("pack-save-recipes");shot("public-selective-preview")
-        compose.onNodeWithTag("pack-save-recipes").assertIsDisplayed().performClick()
-        compose.waitUntil(10000){compose.onAllNodesWithTag("pack-save-recipes").fetchSemanticsNodes().isEmpty()}
-        // PL-19: after Save, the detail's primary action is "Open in Recipes".
+        // Slice 5 (element 4.2): saving is Fork — the tweak-lite sheet,
+        // no Cook Pack download. Saving as presented forks both recipes
+        // with the book's "— my version" names.
+        compose.onNodeWithTag("public-fork").performScrollTo().performClick();waitFor("fork-save");shot("public-fork-tweak")
+        compose.onNodeWithTag("fork-save").performScrollTo().assertIsDisplayed().performClick()
+        compose.waitUntil(15000){compose.onAllNodesWithTag("fork-save").fetchSemanticsNodes().isEmpty()}
+        // PL-19: after a save, the detail's primary action is "Open in Recipes".
         waitFor("public-open-recipes");compose.onNodeWithTag("public-open-recipes").assertIsDisplayed();shot("public-saved")
         val saved=runBlocking(Dispatchers.IO){app.database.recipeDao().recipes()};assertEquals(2,saved.size)
         assertTrue(runBlocking(Dispatchers.IO){app.database.cookDao().getAllCooks().isEmpty()})

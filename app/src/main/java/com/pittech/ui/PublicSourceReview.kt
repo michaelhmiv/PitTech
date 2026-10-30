@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            Text("This review does not replace recipes, reference measurements, or an active meal. To keep a different shared version, open its source and use the separate Save preview.",style=PitTechTextStyles.body,color=tokens.inkMuted)
+            Text("This review does not replace recipes, reference measurements, or an active meal. To keep a different shared version, open its source and fork it.",style=PitTechTextStyles.body,color=tokens.inkMuted)
             if(busy)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.WORKING)};message?.let { Text(it) };TextButton(onClick={ showing=false },modifier=Modifier.testTag("source-review-done")) { Text("Done") }
         }
     }

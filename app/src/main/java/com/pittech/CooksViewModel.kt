@@ -52,13 +52,36 @@ class CooksViewModel(
         _importHistoryAdded.value = false
         _importPreview.value = prepared.copy(publicCookOnSave = cook)
     }
-    internal var publicDiscovery = com.pittech.data.PublicManager(context, viewModelScope, onPreview = ::previewPublicCookPack)
+    internal var publicDiscovery = com.pittech.data.PublicManager(context, viewModelScope, onPreview = ::previewPublicCookPack,
+        onFork = ::forkPublication, onPlanRecipe = { recipeId, revisionId -> planRecipe(recipeId, revisionId) })
         private set
     internal fun installPublicTestAPI(api: com.pittech.data.PublicAPI) {
         check(BuildConfig.DEBUG)
         publicDiscovery = com.pittech.data.PublicManager(context, viewModelScope, onPreview = ::previewPublicCookPack, api = api, enabled = true,
-            cache = com.pittech.data.PublicCache(context, "test-" + java.util.UUID.randomUUID().toString()))
+            cache = com.pittech.data.PublicCache(context, "test-" + java.util.UUID.randomUUID().toString()),
+            onFork = ::forkPublication, onPlanRecipe = { recipeId, revisionId -> planRecipe(recipeId, revisionId) })
     }
+
+    /**
+     * Flowing Slice 5 (element 4.2): the fork write behind
+     * [com.pittech.data.PublicManager.fork] — convert the detail
+     * payload on device ([com.pittech.data.PublicationFork]), fetch
+     * each photo's verified bytes through the manager's image path,
+     * and land everything through the same restore writer a Cook
+     * Pack import confirms into. No pack is downloaded.
+     */
+    private suspend fun forkPublication(detail: com.pittech.data.PublicDetail, tweaks: List<com.pittech.data.PublicationFork.Tweak>): List<com.pittech.data.PublicationFork.SavedFork> =
+        withContext(Dispatchers.IO) {
+            val prepared = com.pittech.data.PublicationFork.prepare(detail, tweaks, System.currentTimeMillis())
+            val bytesByMedia = mutableMapOf<String, ByteArray>()
+            val attachments = mutableMapOf<String, ByteArray>()
+            for ((key, media) in prepared.photoMedia) {
+                val mediaId = media.getString("id")
+                attachments[key] = bytesByMedia.getOrPut(mediaId) { publicDiscovery.image(detail.id, media) }
+            }
+            repository.importSnapshot(prepared.snapshot, attachments)
+            prepared.saved
+        }
     internal val communityControls = com.pittech.data.CommunityControls(com.pittech.data.CommunityVault(context),viewModelScope)
     internal val account: com.pittech.data.AccountManager = com.pittech.data.AccountManager(com.pittech.data.AccountVault(context), viewModelScope,cleanup={ user ->
         com.pittech.data.PublicationOperationsStore(context).purgeAccount(user)
@@ -131,7 +154,11 @@ class CooksViewModel(
                 recipeName = recipe.name,
                 snapshot = snapshot,
                 provenance = provenance,
-                seeded = com.pittech.domain.PlanSeeding.fromRecipe(snapshot, provenance),
+                // Slice 5: a recipe with no local source cook can still
+                // seed from its own frozen story (a forked publication's
+                // recorded cook) — the same honest-absence rule applies.
+                seeded = com.pittech.domain.PlanSeeding.fromRecipe(snapshot, provenance)
+                    ?: com.pittech.domain.PlanSeeding.fromSnapshotStory(snapshot),
             )
         }
     }
@@ -314,6 +341,53 @@ class CooksViewModel(
                 ?: com.pittech.domain.CookPlaybook("Planned cook", NewCookDraft("Planned cook", dishes = listOf(DishDraft("Main dish", "Beef"))), emptyList())
             _servePlanEditor.value = com.pittech.domain.ServePlan(book, System.currentTimeMillis() + 86_400_000, java.time.ZoneId.systemDefault().id,
                 schedules = book.draft.dishes.mapIndexed { i, _ -> com.pittech.domain.DishSchedule(i, evidenceNote = "Enter your duration range", pitF = book.draft.setpointText.toDoubleOrNull()?.let { com.pittech.domain.CookPlanEngine.fahrenheit(it, book.draft.setpointUnit) }) })
+        }
+    }
+    /**
+     * Flowing Slice 5 (elements 4.4 + 6.5): "Plan this" — drop a saved
+     * recipe into the serve planner pre-filled, nothing re-typed. The
+     * lane seeds from the recipe's source cook (§4.3 provenance) or,
+     * for a fork, from its frozen story. Dinner defaults to 6 PM —
+     * today when that's still ahead, otherwise tomorrow (the book's
+     * "dinner at 6"). An unstarted plan already aimed at that dinner
+     * (same date, within three hours) gains the lane instead of a
+     * second plan being created beside it.
+     */
+    fun planRecipe(recipeId: String, revisionId: String) = perform {
+        _durationEvidence.value = app.servePlanRepository.evidence()
+        val revision = repository.recipes.revision(revisionId) ?: error("This recipe version is unavailable.")
+        require(revision.recipeId == recipeId) { "This recipe version is unavailable." }
+        val snapshot = com.pittech.domain.RecipeSnapshotCodec.decode(revision.snapshotJson)
+        val provenance = recipeProvenance(revision.sourceCookId, revision.sourceDishId)
+        val seeded = com.pittech.domain.PlanSeeding.fromRecipe(snapshot, provenance)
+            ?: com.pittech.domain.PlanSeeding.fromSnapshotStory(snapshot)
+        val zone = java.time.ZoneId.systemDefault()
+        val today = java.time.LocalDate.now(zone)
+        var dinner = today.atTime(18, 0).atZone(zone)
+        if (dinner.toInstant().toEpochMilli() <= System.currentTimeMillis()) dinner = today.plusDays(1).atTime(18, 0).atZone(zone)
+        val serveAt = dinner.toInstant().toEpochMilli()
+        val existing = app.companionRepository.observeAll().first()
+            .filter { it.kind == "upcoming" }
+            .mapNotNull { record -> runCatching { record.id to com.pittech.domain.ServeTimePlanner.decode(record.payload) }.getOrNull() }
+            .filter { (_, plan) -> plan.startedCookId == null &&
+                java.time.Instant.ofEpochMilli(plan.serveAt).atZone(zone).toLocalDate() == dinner.toLocalDate() &&
+                kotlin.math.abs(plan.serveAt - serveAt) <= 3 * 3_600_000L }
+            .minByOrNull { (_, plan) -> kotlin.math.abs(plan.serveAt - serveAt) }
+        if (existing != null) {
+            val (recordId, plan) = existing
+            val index = plan.book.draft.dishes.size
+            editingServePlanId = recordId
+            _servePlanEditor.value = plan.copy(
+                book = plan.book.copy(draft = plan.book.draft.copy(dishes = plan.book.draft.dishes + (seeded?.dish ?: snapshot.dish))),
+                schedules = plan.schedules + (seeded?.schedule?.copy(dishIndex = index)
+                    ?: com.pittech.domain.DishSchedule(index, evidenceNote = "Enter your duration range", pitF = snapshot.preferredPitTemperatureF)),
+            )
+        } else {
+            editingServePlanId = null
+            val book = com.pittech.domain.CookPlaybook(snapshot.name, NewCookDraft(snapshot.name, dishes = listOf(seeded?.dish ?: snapshot.dish)), emptyList())
+            _servePlanEditor.value = com.pittech.domain.ServePlan(book, serveAt, zone.id,
+                schedules = listOf(seeded?.schedule?.copy(dishIndex = 0)
+                    ?: com.pittech.domain.DishSchedule(0, evidenceNote = "Enter your duration range", pitF = snapshot.preferredPitTemperatureF)))
         }
     }
     fun closeServePlan() { _servePlanEditor.value = null }
@@ -564,8 +638,8 @@ class CooksViewModel(
      * save can mark that Discover detail as saved (PL-19). */
     private var previewPublicItemId: String? = null
 
-    /** PL-18: a completed publication asks the shell to open My Cookbook —
-     * the user lands where the thing went. */
+    /** PL-18: a completed publication asks the shell to open the public
+     * cookbook — the user lands where the thing went. */
     private val _cookbookOpenRequests = MutableStateFlow(0)
     val cookbookOpenRequests: StateFlow<Int> = _cookbookOpenRequests.asStateFlow()
     fun requestCookbookOpen() { _cookbookOpenRequests.value += 1 }

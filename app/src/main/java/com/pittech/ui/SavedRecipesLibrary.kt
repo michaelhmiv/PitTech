@@ -308,6 +308,10 @@ private fun RecipeGridTile(
     SheetSurface(onDismiss = { if (!busy) onClose() }, title = recipe.name, dismissEnabled = !busy, fillHeightFraction = 0.92f, actions = {
         TextButton(onClick = onClose, enabled = !busy, modifier = Modifier.testTag("recipe-details-close")) { Text("Close") }
         TextButton(onClick = { onUse(selected) }, enabled = revision != null && !busy) { Text("Use this version") }
+        // Slice 5 (element 4.4): "Plan this" beside "Use this version" —
+        // the recipe drops into the planner pre-filled instead of
+        // starting a cook now.
+        TextButton(onClick = { viewModel.planRecipe(recipe.id, selected); onClose() }, enabled = revision != null && !busy, modifier = Modifier.testTag("recipe-plan-this")) { Text("Plan this") }
     }) {
         Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SimpleDropdownField("Version", history.firstOrNull { it.id == selected }?.let { recipeVersionLabel(it, history) }.orEmpty(), history.sortedWith(compareByDescending<RecipeRevision> { it.revisionNumber }.thenBy { it.id }).map { recipeVersionLabel(it, history) }, { label -> selected = history.first { recipeVersionLabel(it, history) == label }.id })
@@ -324,7 +328,8 @@ private fun RecipeGridTile(
                 RecipeStoryBlock(storyProvenance, sourceDetail, viewModel,
                     onOpenCook = onOpenCook,
                     onCookAgain = { onUse(selected) },
-                    onFullChart = { storyChart = true })
+                    onFullChart = { storyChart = true },
+                    onPlanThis = { viewModel.planRecipe(recipe.id, selected); onClose() })
             } else if (revision?.sourceCookId != null) {
                 if (revision.sourceCookId in cookIds) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -452,6 +457,7 @@ private fun RecipeStoryBlock(
     onOpenCook: ((String) -> Unit)?,
     onCookAgain: () -> Unit,
     onFullChart: () -> Unit,
+    onPlanThis: (() -> Unit)? = null,
 ) {
     val tokens = pitTechTokens()
     TurnInCard(Modifier.fillMaxWidth().testTag("recipe-story")) {
@@ -512,6 +518,10 @@ private fun RecipeStoryBlock(
             if (provenance.keepChips.isNotEmpty()) StoryChipRow("Keep", provenance.keepChips, "recipe-keep-chips")
             if (provenance.changeChips.isNotEmpty()) StoryChipRow("Change", provenance.changeChips, "recipe-change-chips")
             Button(onClick = onCookAgain, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-cook-again")) { Text("Cook this again") }
+            // Slice 5 (element 6.5): Plan This is a first-class door
+            // beside Cook This Again — same recipe, the planner
+            // instead of a cook starting now.
+            if (onPlanThis != null) OutlinedButton(onClick = onPlanThis, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-story-plan-this")) { Text("Plan this") }
         }
     }
 }
