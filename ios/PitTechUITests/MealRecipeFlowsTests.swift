@@ -315,9 +315,17 @@ final class MealRecipeFlowsTests: XCTestCase {
             let starred = app.staticTexts["Your star is saved."]; reveal(starred, app: app); XCTAssertTrue(starred.waitForExistence(timeout: 15))
             // Fork → tweak-lite: rub, wrap and target are the only decisions.
             let fork = app.buttons["public-fork"]; reveal(fork, app: app); fork.tap()
-            let rub = app.textFields["fork-rub-0"]; reveal(rub, app: app); XCTAssertTrue(rub.waitForExistence(timeout: 15)); rub.tap(); rub.typeText("House rub")
+            let rub = app.textFields["fork-rub-0"]; reveal(rub, app: app); XCTAssertTrue(rub.waitForExistence(timeout: 15))
+            for _ in 0..<4 where !rub.hasFocus { rub.tap(); _ = rub.waitForExistence(timeout: 1) }
+            XCTAssertTrue(rub.hasFocus, "The rub field must take keyboard focus."); rub.typeText("House rub")
             let foil = app.buttons["fork-wrap-0-foil"]; reveal(foil, app: app); foil.tap()
-            let target = app.textFields["fork-target-0"]; reveal(target, app: app); target.tap()
+            // The rub field can keep first responder past a tap on the
+            // next field (CI, standard text: the tap landed but focus
+            // stayed) — tap until the target field actually holds focus
+            // before typing into it.
+            let target = app.textFields["fork-target-0"]; reveal(target, app: app)
+            for _ in 0..<4 where !target.hasFocus { target.tap(); _ = target.waitForExistence(timeout: 1) }
+            XCTAssertTrue(target.hasFocus, "The target field must take keyboard focus.")
             if let current = target.value as? String, !current.isEmpty { target.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count)) }
             target.typeText("165")
             let save = app.buttons["fork-save"]; reveal(save, app: app); save.tap()
