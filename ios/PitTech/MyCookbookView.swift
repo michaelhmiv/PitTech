@@ -87,7 +87,7 @@ struct NativeMyCookbookView: View {
                 if busy { ProgressView("Connecting…") }
                 if let message { Text(message).accessibilityIdentifier("cookbook-message") }
             }.padding(20)
-        }.accessibilityIdentifier("cookbook-content").navigationTitle("My cookbook").navigationBarTitleDisplayMode(.inline)
+        }.accessibilityIdentifier("cookbook-content").navigationTitle("Public cookbook").navigationBarTitleDisplayMode(.inline)
             .task(id: account.stateUserId) {
                 if writer == nil { writer = NativePublicationWriter.forApp(session: account) }
                 loadedUser = account.stateUserId; items = []; pending = nil; pendingArchive = nil; pendingProfile = nil; profilePreview = nil; removing = nil; name = ""; handle = ""; isPublic = false; profileReviewStatus = nil; ownerPreview = nil; ownerReceipt = nil; ownerUser = nil; editingDraft = nil

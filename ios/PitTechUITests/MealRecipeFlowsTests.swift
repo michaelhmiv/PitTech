@@ -296,6 +296,128 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
     }
+    // Text entry is the fragile step on the hosted runners: a tap can
+    // land while a sheet is still settling and the field never takes
+    // first responder, so a bare typeText dies with "Neither element
+    // nor any descendant has keyboard focus" — across CI waves that
+    // signature hit the fork sheet's rub field, its target field, and
+    // an unrelated account field in another shard. Work patiently:
+    // tap the field's center until the field itself reports focus,
+    // type through the app (input follows first responder), then prove
+    // the typing landed by reading the field's value back; retry the
+    // whole cycle a bounded number of times before giving up.
+    @discardableResult
+    private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false) -> Bool {
+        guard field.waitForExistence(timeout: 15) else { return false }
+        if !field.isHittable { reveal(field, app: app) }
+        Thread.sleep(forTimeInterval: 1)
+        for _ in 0..<3 {
+            // Alternate the tap mechanism — an element tap, then a raw
+            // window-coordinate tap at the field's center; the two reach
+            // first responder through different event paths, and a
+            // stalled session often answers one when it ignores the other.
+            for attempt in 0..<6 where !field.hasFocus {
+                if attempt % 2 == 0 {
+                    field.tap()
+                } else if field.frame.width > 0, field.frame.height > 0 {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                        .withOffset(CGVector(dx: field.frame.midX, dy: field.frame.midY)).tap()
+                }
+                _ = app.keyboards.firstMatch.waitForExistence(timeout: 2)
+                if field.hasFocus { break }
+            }
+            guard field.hasFocus else { continue }
+            if clearingFirst, let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
+                app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
+            }
+            app.typeText(text)
+            if (field.value as? String)?.contains(text) == true { return true }
+        }
+        return false
+    }
+    // Flowing Slice 5 chain (mirrors Android's FlowingHappyPathFlowTest):
+    // Discover → star → fork → tweak → plan-this → a start time, not a form.
+    // Runs signed-in through --flowing-chain-ui-test: the fixture feed and
+    // the in-memory publication writer answer locally; nothing is packed.
+    func testFlowingChainStarForkTweakPlanThisShowsStartTimeAtBothTextSizes() {
+        for large in [false, true] {
+            // A stalled app session can starve first-responder delivery
+            // for its whole lifetime (see enterText); a fresh launch is
+            // the reset that clears it, so each text size gets one full
+            // re-drive before the chain is allowed to fail.
+            var completed = false
+            for _ in 0..<2 where !completed { completed = runChain(large: large) }
+            XCTAssertTrue(completed, "The Discover → star → fork → tweak → plan-this chain did not complete at \(large ? "large" : "standard") text size.")
+        }
+    }
+    // One full drive of the chain. Returns false — after terminating the
+    // app — at the first step that does not land, so the caller can
+    // relaunch and drive it again from a clean fixture state.
+    private func runChain(large: Bool) -> Bool {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--flowing-chain-ui-test"] + (large ? ["--screenshot-large-text"] : []); app.launch()
+        func bail() -> Bool { app.terminate(); return false }
+        app.tabBars.buttons["Discover"].tap()
+        // The card browses by photo, time and temp: the fixture story
+        // carries a 7H 40M duration, so the time slot shows on the card.
+        let cardTime = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "7H 40M")).firstMatch
+        guard cardTime.waitForExistence(timeout: 20) else { return bail() }
+        let item = app.buttons["discover-open-12345678-1234-4234-8234-123456789abc"]; reveal(item, app: app); item.tap()
+        guard app.staticTexts["public-title"].waitForExistence(timeout: 15) else { return bail() }
+        // Star: the spec's word for the like, same endpoint underneath.
+        let star = app.buttons["public-star"]; reveal(star, app: app); star.tap()
+        let starred = app.staticTexts["Your star is saved."]; reveal(starred, app: app)
+        guard starred.waitForExistence(timeout: 15) else { return bail() }
+        // Fork → tweak-lite: rub, wrap and target are the only decisions.
+        let fork = app.buttons["public-fork"]; reveal(fork, app: app); fork.tap()
+        // Present the sheet twice. The first presentation lands while
+        // the star write is still settling into the coordinator, and on
+        // stalled runners its fields refused first responder for that
+        // presentation's whole life across five consecutive CI drives —
+        // including across full app relaunches, which replay the same
+        // star → fork sequence. A dismiss and re-present gives the test
+        // a clean sheet whose presentation follows no write.
+        let probe = app.textFields["fork-name-0"]
+        if probe.waitForExistence(timeout: 10) {
+            app.buttons["Cancel"].tap()
+            for _ in 0..<20 where probe.exists { Thread.sleep(forTimeInterval: 0.5) }
+            if !probe.exists { reveal(fork, app: app); fork.tap() }
+        }
+        // Let the sheet finish presenting before touching its fields,
+        // then warm the keyboard up on the name field: a cold first
+        // responder inside a just-presented sheet is where the runner
+        // stalls bite, and entering the rub field with the keyboard
+        // already up takes the transfer path instead.
+        let name = app.textFields["fork-name-0"]
+        if name.waitForExistence(timeout: 10) {
+            Thread.sleep(forTimeInterval: 2)
+            for _ in 0..<5 where !app.keyboards.firstMatch.exists {
+                name.tap(); _ = app.keyboards.firstMatch.waitForExistence(timeout: 2)
+            }
+        }
+        let rub = app.textFields["fork-rub-0"]; reveal(rub, app: app)
+        guard enterText("House rub", into: rub, app: app) else { return bail() }
+        let foil = app.buttons["fork-wrap-0-foil"]; reveal(foil, app: app); foil.tap()
+        // The story pre-fills the target with its last recorded food
+        // temperature (162); the tweak replaces it with 165.
+        let target = app.textFields["fork-target-0"]; reveal(target, app: app)
+        guard enterText("165", into: target, app: app, clearingFirst: true) else { return bail() }
+        let save = app.buttons["fork-save"]; reveal(save, app: app); save.tap()
+        // Success lands back on the publication with the saved copy open.
+        let openRecipes = app.buttons["public-open-recipes"]
+        guard openRecipes.waitForExistence(timeout: 20) else { return bail() }
+        capture(large ? "Flowing chain forked large text" : "Flowing chain forked")
+        // Plan-this: the fork's recorded story seeds the plan, and the
+        // day board leads with a start time.
+        let planThis = app.buttons["public-plan-this"]; reveal(planThis, app: app); planThis.tap()
+        let headline = app.staticTexts["plan-board-headline"]
+        guard headline.waitForExistence(timeout: 20) else { return bail() }
+        guard headline.label.contains(":") else { return bail() }
+        let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "recorded cook")).firstMatch
+        for _ in 0..<6 where !note.exists { app.swipeUp() }
+        guard note.exists else { return bail() }
+        capture(large ? "Flowing chain plan large text" : "Flowing chain plan")
+        app.terminate(); return true
+    }
     func testAccountCodeFlowAndSignOutKeepLocalCookbookAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication()

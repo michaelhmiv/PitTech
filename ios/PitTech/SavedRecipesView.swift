@@ -260,9 +260,11 @@ struct SavedRecipeDetailView: View {
                    let provenance = store.recipeProvenance(sourceCookId: revision["sourceCookId"]?.stringValue, sourceDishId: revision["sourceDishId"]?.stringValue),
                    provenance.sourceCookId == revision["sourceCookId"]?.stringValue,
                    store.library.cooks.contains(where: { $0.id == provenance.sourceCookId }) {
-                    RecipeStoryBlock(provenance: provenance) {
+                    RecipeStoryBlock(provenance: provenance, onCookAgain: {
                         act { startSetup = try store.recipeStartSetup(title: recipe["name"]?.stringValue ?? "New meal", revisionIds: [revisionId], sourceLabel: "From your Recipes · saved recipes stay attached to their dishes") }
-                    }
+                    }, onPlanThis: {
+                        store.planRecipe(recipeId: recipeId, revisionId: revisionId)
+                    })
                 }
                 // The scoreboard row: pit temperature, serves, and the
                 // first recorded target — the same cells Android's detail
@@ -308,6 +310,10 @@ struct SavedRecipeDetailView: View {
                 else { TurnInStatusStrip(text: "Source meal is unavailable. Saved instructions and reference photos remain available.", accent: PitTechStyle.cobalt) }
             }
             Button("Use this version") { act { startSetup = try store.recipeStartSetup(title: recipe["name"]?.stringValue ?? "New meal", revisionIds: [revisionId], sourceLabel: "From your Recipes · saved recipes stay attached to their dishes") } }
+            // Slice 5 (§4.4): plan-this beside Use this version — the
+            // planner opens seeded from this version's recorded cook.
+            Button("Plan this") { store.planRecipe(recipeId: recipeId, revisionId: revisionId) }
+                .accessibilityIdentifier("recipe-plan-this")
             Button("Share recipe") { act { sharingDraftId = try store.createRecipeSharingDraft(revisionId) } }.accessibilityIdentifier("recipe-share")
             Button("Edit a new version") { act { let revision = store.recipeRevision(revisionId) ?? [:]; editor = NativeRecipeRequest(snapshot: try store.recipeSnapshot(revisionId), recipeId: recipeId, expectedRevisionId: recipe["currentRevisionId"]?.stringValue, assetRevisionId: revisionId, sourceCookId: revision["sourceCookId"]?.stringValue, sourceDishId: revision["sourceDishId"]?.stringValue) } }
             TextField("Variation name", text: $duplicateName)

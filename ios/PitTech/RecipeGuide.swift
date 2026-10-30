@@ -94,7 +94,7 @@ extension PitTechLibrary {
 }
 
 @MainActor extension CookStore {
-    func pinGuide(_ revisionId: String, snapshot: RecipeSnapshot, inheritedRevisionId: String? = nil) throws -> JSONValue {
+    func pinGuide(_ revisionId: String, snapshot: RecipeSnapshot, inheritedRevisionId: String? = nil, pinnedStory: JSONValue? = nil) throws -> JSONValue {
         let revision = recipeRevision(revisionId)
         let inheritedId = inheritedRevisionId ?? revision?["parentRevisionId"]?.stringValue
         let canInherit = inheritedId.flatMap(recipeRevision).map { $0["sourceCookId"] == revision?["sourceCookId"] } ?? false
@@ -106,6 +106,10 @@ extension PitTechLibrary {
                 if canInherit, let entry = entries.first(where: { $0.sourceRevisionId == inheritedId && $0.includeStory }) { inherited = entry }
             }
         }
+        // Slice 5 fork: the caller carries the story to pin (a public
+        // recipe's frozen story, readings included — the snapshot's own
+        // observations carry none of them).
+        if let pinnedStory { return try NativePinnedRecipeGuide(revisionId: revisionId, snapshot: snapshot, story: pinnedStory).encoded() }
         if let inherited { return try NativePinnedRecipeGuide(revisionId: revisionId, snapshot: snapshot, story: inherited.story).encoded() }
         var readings: [JSONValue] = [], gaps: [JSONValue] = []
         var attempt: JSONValue = revision?["sourceDishId"] ?? .null
@@ -130,8 +134,8 @@ extension PitTechLibrary {
             "observations": .array(snapshot.observations), "readings": .array(readings), "connectionGaps": .array(gaps), "results": .array([])])
         return try NativePinnedRecipeGuide(revisionId: revisionId, snapshot: snapshot, story: story).encoded()
     }
-    func retainRecipeGuide(_ revisionId: String, snapshot: RecipeSnapshot, inheritedRevisionId: String?) throws {
-        let pinned = try pinGuide(revisionId, snapshot: snapshot, inheritedRevisionId: inheritedRevisionId)
+    func retainRecipeGuide(_ revisionId: String, snapshot: RecipeSnapshot, inheritedRevisionId: String?, pinnedStory: JSONValue? = nil) throws {
+        let pinned = try pinGuide(revisionId, snapshot: snapshot, inheritedRevisionId: inheritedRevisionId, pinnedStory: pinnedStory)
         let entry = NativeSharingEntry(sourceDishId: recipeRevision(revisionId)?["sourceDishId"]?.stringValue, sourceRevisionId: revisionId, snapshotJson: try recipeJSON(snapshot), story: pinned.objectValue?["story"] ?? .null, includeStory: true)
         let document = NativeSharingDocument(title: String(snapshot.name.prefix(160)), entries: [entry]), now = Date.now.timeIntervalSince1970 * 1000
         library.companionRecords.append(.object(["id": .string("recipe-guide:" + revisionId), "kind": .string("recipe_reference"), "title": .string(document.title), "payload": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(document)), "created": .number(now), "updated": .number(now)]))

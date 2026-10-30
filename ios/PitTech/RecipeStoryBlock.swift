@@ -12,6 +12,9 @@ struct RecipeStoryBlock: View {
     @Environment(CookStore.self) private var store
     let provenance: RecipeProvenance
     let onCookAgain: () -> Void
+    /// Slice 5 (§4.4): plan-this beside Cook this again — the second
+    /// door into the serve planner from a recipe's story.
+    var onPlanThis: () -> Void = {}
     @State private var chartContext: LiveChartContext?
 
     /// "From your October 12, 2026 cook — Austin XL · 250° · Hickory ·
@@ -85,10 +88,16 @@ struct RecipeStoryBlock: View {
                 TurnInMetaLabel("Change next time")
                 TurnInFlowLayout(spacing: 8) { ForEach(provenance.changeChips, id: \.self) { chip in chipView(chip) } }
             }
-            Button("Cook this again", action: onCookAgain)
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .accessibilityIdentifier("recipe-story-cook-again")
+            HStack(spacing: 10) {
+                Button("Cook this again", action: onCookAgain)
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("recipe-story-cook-again")
+                Button("Plan this", action: onPlanThis)
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("recipe-story-plan-this")
+            }
         }
         .accessibilityIdentifier("recipe-story")
         .sheet(item: $chartContext) { context in

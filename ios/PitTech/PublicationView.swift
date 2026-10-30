@@ -39,7 +39,7 @@ struct NativePublicationView: View {
                     TurnInBannerText(pending.rejected ? "This request was rejected" : "An interrupted request is saved")
                     Text("Retry uses the exact saved content and the same account. Editing the sharing draft won't change this request.").foregroundStyle(PitTechStyle.inkMuted)
                     if let prepared { NativePublicationContent(prepared: prepared) }
-                    else { Text(pending.method == "DELETE" ? "Saved request: remove a public publication or like." : "A saved account or like change must be recovered in My cookbook.") }
+                    else { Text(pending.method == "DELETE" ? "Saved request: remove a public publication or like." : "A saved account or like change must be recovered in Public cookbook.") }
                     if pending.draftId == draft, prepared != nil, !pending.rejected {
                         Button("Retry the saved publication") { run { _ = try await writer?.recover(); prepared = nil; try refreshPending(); message = "The saved publication was recovered." } }.disabled(busy).accessibilityIdentifier("publication-recover")
                     }
@@ -49,7 +49,7 @@ struct NativePublicationView: View {
                     }
                 } else if let published {
                     Text(published.status == "pending_review" ? "Submitted for review" : "Published").font(PitTechFont.bannerTitle).accessibilityIdentifier("publication-complete")
-                    if published.status == "pending_review" { Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.") }
+                    if published.status == "pending_review" { Text("This revision becomes public after its text and selected photos pass review. Check Public cookbook for its status.") }
                     else {
                         Link("Open public recipe", destination: URL(string: published.url)!); ShareLink("Share public link", item: URL(string: published.url)!)
                         // Flowing Slice 3 (Spread 07): the posted
@@ -57,8 +57,8 @@ struct NativePublicationView: View {
                         Button("Share posted card") { postedCard = true }.accessibilityIdentifier("publication-share-card")
                     }
                     // J9: after publishing, the next step lands where the
-                    // thing went — My Cookbook — not back at the draft.
-                    NavigationLink("Open My cookbook") { NativeMyCookbookView() }.accessibilityIdentifier("publication-open-cookbook")
+                    // thing went — Public cookbook — not back at the draft.
+                    NavigationLink("Open Public cookbook") { NativeMyCookbookView() }.accessibilityIdentifier("publication-open-cookbook")
                     Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
                 } else {
                     Picker("Publication", selection: $kind) { Text("Recipe").tag("recipe"); Text("Meal collection").tag("collection"); Text("Actual recorded cook").tag("attempt") }.disabled(busy)
@@ -220,14 +220,16 @@ struct NativePublicLikeActions: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if account.signedIn {
-                // §7 disposition: the Like is a placard, not a text button.
-                // This surface carries no like state or count, so the
-                // placard keeps the existing copy; Remove stays a button.
-                TurnInPlacard(systemImage: "heart.fill", label: "Like this recipe", identifier: "public-like") { set(true) }.disabled(busy)
-                Button("Remove my like") { set(false) }.disabled(busy).accessibilityIdentifier("public-unlike")
+                // §7 disposition: the Star is a placard, not a text button
+                // (Slice 5 renames the Like to its spec name; the endpoint
+                // is the same POST/DELETE /v1/recipes/<id>/like). This
+                // surface carries no star state or count, so the placard
+                // keeps the action copy; Remove stays a button.
+                TurnInPlacard(systemImage: "star.fill", label: "Star this recipe", identifier: "public-star") { set(true) }.disabled(busy)
+                Button("Remove my star") { set(false) }.disabled(busy).accessibilityIdentifier("public-unstar")
             } else {
-                Button("Sign in to like this recipe") { signingIn = true }
-                Text("Signing in won't add a like automatically.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                Button("Sign in to star this recipe") { signingIn = true }
+                Text("Signing in won't add a star automatically.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
             }
             if let message { Text(message) }
         }.task { if writer == nil { writer = NativePublicationWriter.forApp(session: account) } }
@@ -243,8 +245,8 @@ struct NativePublicLikeActions: View {
             do {
                 guard let writer else { throw NativePublicationError.invalid }
                 _ = try await writer.json(method: liked ? "POST" : "DELETE", path: "/v1/recipes/" + id + "/like", body: Data("{}".utf8))
-                message = liked ? "Your like is saved." : "Your like is removed."
-            } catch { message = error.localizedDescription + " Recover interrupted changes in My cookbook." }
+                message = liked ? "Your star is saved." : "Your star is removed."
+            } catch { message = error.localizedDescription + " Recover interrupted changes in Public cookbook." }
             busy = false
         }
     }

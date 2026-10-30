@@ -54,7 +54,7 @@ struct NativePublicationUITestHost: View {
                 if let draft { SharingDraftView(id: draft) }
                 else if let message { Text(message) }
                 else { ProgressView("Preparing selected recipe…") }
-            }.toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink("My cookbook") { NativeMyCookbookView() }.accessibilityIdentifier("publication-test-cookbook") } }
+            }.toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink("Public cookbook") { NativeMyCookbookView() }.accessibilityIdentifier("publication-test-cookbook") } }
         }.task {
             do {
                 let fixture = try JSONSerialization.jsonObject(with: NativePublicUITestFixture.data) as! [String: Any]
@@ -75,7 +75,9 @@ struct NativePublicationUITestHost: View {
 @MainActor extension NativePublicationWriter {
     static func forApp(session: any NativePublicationSession) -> NativePublicationWriter {
         #if DEBUG
-        if NativePublicationUITestSupport.active { return NativePublicationWriter(session: session, store: NativePublicationOperationsStore(directory: NativePublicationUITestSupport.directory), api: NativePublicationUITestSupport.api) }
+        // Slice 5's chain test stars through the same in-memory writer
+        // (its API answers like writes) without the publishing host.
+        if NativePublicationUITestSupport.active || CommandLine.arguments.contains("--flowing-chain-ui-test") { return NativePublicationWriter(session: session, store: NativePublicationOperationsStore(directory: NativePublicationUITestSupport.directory), api: NativePublicationUITestSupport.api) }
         #endif
         return NativePublicationWriter(session: session)
     }

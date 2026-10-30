@@ -157,6 +157,21 @@ private struct RootPresentationModifier: ViewModifier {
             .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
                 Button("OK", role: .cancel) { store.archiveMessage = nil }
             } message: { Text(store.archiveMessage ?? "") }
+            // Slice 4/5: the serve-plan editor is hosted at the root so
+            // plan-this opens it identically from Meals, Recipes and the
+            // publication page.
+            .sheet(isPresented: Binding(
+                get: { store.servePlanEditorPlan != nil },
+                set: { if !$0 { store.servePlanEditorPlan = nil; store.servePlanEditorId = nil; store.servePlanEditorChosenPitF = nil } }
+            )) {
+                if let plan = store.servePlanEditorPlan {
+                    ServePlanEditorView(plan: plan, planId: store.servePlanEditorId, chosenPitF: store.servePlanEditorChosenPitF)
+                        .modifier(ScreenshotTextSize())
+                }
+            }
+            .alert("Serving plan", isPresented: Binding(get: { store.servePlanNotice != nil }, set: { if !$0 { store.servePlanNotice = nil } })) {
+                Button("OK", role: .cancel) { store.servePlanNotice = nil }
+            } message: { Text(store.servePlanNotice ?? "") }
             .alert("Couldn't save", isPresented: Binding(
                 get: { store.saveError != nil },
                 set: { if !$0 { store.clearSaveError() } }
@@ -223,6 +238,14 @@ struct CookListView: View {
                             }
                         }
                     }
+                    // Slice 4 §3: today's started plans ride under the
+                    // active cooks as the Live plan strip.
+                    ForEach(store.activeCooks) { cook in
+                        if let goal = store.serveGoal(cookId: cook.id),
+                           Calendar.current.isDate(Date(timeIntervalSince1970: Double(goal.serveAtUtcMillis) / 1000), inSameDayAs: .now) {
+                            PlanScheduleStripView(cookId: cook.id, plan: goal)
+                        }
+                    }
                     Button { startSetup = .blank(temperatureUnit: "°\(store.temperatureUnit)", weightUnit: store.weightUnit) } label: {
                         Label("Start meal", systemImage: "plus")
                             .font(PitTechFont.bodyEmphasis)
@@ -231,6 +254,10 @@ struct CookListView: View {
                             .background(PitTechStyle.primaryFill, in: RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
+
+                    // Slice 4 §3: saved serve plans and the planner's
+                    // front door ride under Start meal.
+                    UpcomingPlansSection(onStarted: { mealPath.append($0) })
 
                     if let draft = store.setupDraft {
                         // PL-13: the kept setup is one tap from Meals,

@@ -154,6 +154,113 @@ import XCTest
         audience = "after-unblock"; community.controlsChanged()
         await community.refresh(sort: "liked", food: "", query: ""); XCTAssertTrue(community.items.isEmpty)
     }
+    // MARK: - Slice 5: fork + tweak-lite, plan-this, card facts
+
+    func testForkConverterAppliesTheThreeTweaksAndRenamesTheSnapshotOnly() async throws {
+        let (data, fixture) = try fixture(), root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let community = NativePublicCoordinator(enabled: true, api: NativePublicFixtureAPI(data: data), cache: NativePublicCache(directory: root))
+        let id = (fixture["detail"] as! [String: Any])["id"] as! String
+        let (detail, _) = try await community.detail(id)
+        // The sheet's prefill: renamed, the story's last food temperature
+        // (72.2 °C) becomes the target in the reader's unit.
+        var tweaks = detail.recipes.indices.map { PublicationFork.prefill(detail: detail, recipeIndex: $0) }
+        XCTAssertEqual(tweaks.count, 2)
+        XCTAssertEqual(tweaks[0].name, "Oak-smoked pork shoulder — my version")
+        XCTAssertEqual(tweaks[0].targetF, 162)
+        XCTAssertTrue(tweaks[0].targetFromStory)
+        XCTAssertEqual(PublicationFork.untweaked(detail: detail)[0].name, "Oak-smoked pork shoulder")
+        tweaks[0].rub = "House rub"; tweaks[0].wrap = .foil; tweaks[0].targetF = 165
+        let prepared = try PublicationFork.prepare(detail: detail, tweaks: tweaks)
+        XCTAssertEqual(prepared.count, 2)
+        let pork = prepared[0]
+        XCTAssertEqual(pork.snapshot.name, "Oak-smoked pork shoulder — my version")
+        // Android parity on the flagged divergence: the fork renames the
+        // snapshot only — the dish keeps its food name.
+        let dish = try XCTUnwrap(pork.snapshot.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue)
+        XCTAssertEqual(dish["name"]?.stringValue, "Oak-smoked pork shoulder")
+        XCTAssertEqual(pork.snapshot.publicSource?.itemId, detail.id)
+        XCTAssertEqual(pork.snapshot.publicSource?.revisionId, detail.revisionId)
+        XCTAssertEqual(pork.snapshot.publicSource?.displayName, "a PitTech cook")
+        // The frozen story: the wrap milestone plus the synthesized
+        // food-on / food-off pair is three observations, readings pinned.
+        XCTAssertEqual(pork.snapshot.observations.count, 3)
+        XCTAssertEqual(Set(pork.snapshot.observations.compactMap { $0.objectValue?["action"]?.stringValue }), ["food_on", "wrap", "remove"])
+        XCTAssertEqual(pork.frozenStory.objectValue?["readings"]?.arrayValue?.count, 2)
+        XCTAssertNotNil(pork.frozenStory.objectValue?["publicStory"])
+        XCTAssertEqual(pork.photoMediaIds, detail.media.map(\.id))
+        // The three tweaks, committed.
+        let ingredients = try XCTUnwrap(dish["ingredients"]?.arrayValue)
+        XCTAssertEqual(ingredients.first { $0.objectValue?["stage"]?.stringValue == "rub" }?.objectValue?["name"]?.stringValue, "House rub")
+        let wrap = try XCTUnwrap(pork.snapshot.instructions.first { $0.objectValue?["action"]?.stringValue == "wrap" })
+        XCTAssertEqual(wrap.objectValue?["method"]?.stringValue, "Foil")
+        let target = try XCTUnwrap(pork.snapshot.targets.first?.objectValue)
+        XCTAssertEqual(target["type"]?.stringValue, "personal_finish")
+        XCTAssertEqual(target["value"]?.numberValue, 165)
+        XCTAssertEqual(target["unit"]?.stringValue, "°F")
+        XCTAssertEqual(pork.changeNotes, "Fork of Weekend smoke — Rub: House rub · Wrap: Foil · Target: 165°F")
+        // The story-less second recipe forks plainly and notes it plainly.
+        let potatoes = prepared[1]
+        let absentStory = potatoes.frozenStory.objectValue?["publicStory"]
+        XCTAssertTrue(absentStory == nil || absentStory == .null, "A story-less recipe's frozen story carries no public story.")
+        XCTAssertTrue(potatoes.photoMediaIds.isEmpty)
+        let plain = try PublicationFork.prepare(detail: detail, tweaks: PublicationFork.untweaked(detail: detail))
+        XCTAssertEqual(plain[0].changeNotes, "Saved public recipe")
+        XCTAssertEqual(plain[0].snapshot.name, "Oak-smoked pork shoulder")
+    }
+
+    func testForkSavesThroughSaveRecipeAndNeverDownloadsAPack() async throws {
+        let (_, fixture) = try fixture(), root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = CookStore(directory: root)
+        // PublicTestAPI.pack XCTFails: a fork that packs fails this test.
+        let community = NativePublicCoordinator(enabled: true, api: PublicTestAPI(fixture: fixture), cache: NativePublicCache(directory: root.appendingPathComponent("cache")))
+        let id = (fixture["detail"] as! [String: Any])["id"] as! String
+        let (detail, _) = try await community.detail(id)
+        var tweaks = detail.recipes.indices.map { PublicationFork.prefill(detail: detail, recipeIndex: $0) }
+        tweaks[0].rub = "House rub"; tweaks[0].wrap = .foil; tweaks[0].targetF = 165
+        let saved = try await community.fork(detail, tweaks: tweaks, store: store)
+        XCTAssertEqual(saved.count, 2)
+        XCTAssertEqual(store.library.recipes.count, 2)
+        let porkId = try XCTUnwrap(saved.first)
+        let revisionId = try XCTUnwrap(store.recipe(porkId)?["currentRevisionId"]?.stringValue)
+        let snapshot = try store.recipeSnapshot(revisionId)
+        XCTAssertEqual(snapshot.name, "Oak-smoked pork shoulder — my version")
+        XCTAssertEqual(store.recipeAssets(revisionId).count, 1)
+        XCTAssertEqual(store.recipeRevision(revisionId)?["changeNotes"]?.stringValue, "Fork of Weekend smoke — Rub: House rub · Wrap: Foil · Target: 165°F")
+        // The frozen story is pinned as the recipe's guide, public story
+        // and readings included.
+        let guide = try XCTUnwrap(store.library.companionRecords.first { $0.objectValue?["id"]?.stringValue == "recipe-guide:" + revisionId }?.objectValue)
+        let entry = try XCTUnwrap(guide["payload"]?.objectValue?["entries"]?.arrayValue?.first?.objectValue)
+        XCTAssertNotNil(entry["story"]?.objectValue?["publicStory"])
+        XCTAssertEqual(entry["story"]?.objectValue?["readings"]?.arrayValue?.count, 2)
+        // Plan-this reuses the fork (no second save) and the recorded
+        // story seeds the plan that opens.
+        let opened = await community.planThis(detail, store: store)
+        XCTAssertTrue(opened)
+        XCTAssertEqual(store.library.recipes.count, 2)
+        let editorPlan = try XCTUnwrap(store.servePlanEditorPlan)
+        XCTAssertEqual(editorPlan.schedules.count, 1)
+        XCTAssertEqual(editorPlan.schedules[0].cookMaxMinutes, 460)
+        XCTAssertTrue(editorPlan.schedules[0].evidenceNote.contains("a PitTech cook's recorded cook"), editorPlan.schedules[0].evidenceNote)
+    }
+
+    func testCardFactsComeFromTheCachedDetail() async throws {
+        let (data, fixture) = try fixture(), root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let community = NativePublicCoordinator(enabled: true, api: NativePublicFixtureAPI(data: data), cache: NativePublicCache(directory: root))
+        let id = (fixture["detail"] as! [String: Any])["id"] as! String
+        let (detail, _) = try await community.detail(id)
+        // 27,600,000 ms on the pit reads 7H 40M; the story's channels are
+        // food probes only, so the temp slot honestly stays empty.
+        let facts = publicCardFacts(detail: detail, temperatureUnit: "°F")
+        XCTAssertEqual(facts.timeLabel, "7H 40M")
+        XCTAssertNil(facts.tempLabel)
+        await community.refresh(sort: "liked", food: "", query: "")
+        let item = try XCTUnwrap(community.items.first)
+        let cardFacts = await community.cardFacts(for: item, temperatureUnit: "°F")
+        XCTAssertEqual(cardFacts?.timeLabel, "7H 40M")
+    }
 
 }
 private actor PublicTestAPI: NativePublicAPI {

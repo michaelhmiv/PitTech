@@ -45,6 +45,15 @@ final class CookStore {
     /// or a cook is started from it. Device-local only — never synced,
     /// never part of the library archive.
     var setupDraft: CookSetupDraft?
+    /// Flowing Slice 4/5: the serve-plan editor's working plan (nil =
+    /// closed), the saved plan it edits, and the cook's pit choice while a
+    /// one-pit conflict is unresolved. The editor sheet is hosted at the
+    /// app root so plan-this can open it from Meals, Recipes and Discover.
+    var servePlanEditorPlan: ServePlan?
+    var servePlanEditorId: String?
+    var servePlanEditorChosenPitF: Double?
+    /// Shown once after a plan save/start outcome the user must see.
+    var servePlanNotice: String?
     @ObservationIgnored private let defaults: UserDefaults
     private static let setupDraftKey = "pittech.setupDraft.v1"
     private let directory: URL
