@@ -39,7 +39,11 @@ import java.util.Base64
         // with the book's "— my version" names.
         compose.onNodeWithTag("public-fork").performScrollTo().performClick();waitFor("fork-save");shot("public-fork-tweak")
         compose.onNodeWithTag("fork-save").performScrollTo().assertIsDisplayed().performClick()
-        compose.waitUntil(15000){compose.onAllNodesWithTag("fork-save").fetchSemanticsNodes().isEmpty()}
+        // A fork failure keeps the sheet open with its error showing —
+        // surface that error as this test's failure instead of a bare
+        // timeout, so the message is in the log.
+        compose.waitUntil(15000){compose.onAllNodesWithTag("fork-save").fetchSemanticsNodes().isEmpty()||compose.onAllNodesWithTag("fork-error").fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithTag("fork-error").assertDoesNotExist()
         // PL-19: after a save, the detail's primary action is "Open in Recipes".
         waitFor("public-open-recipes");compose.onNodeWithTag("public-open-recipes").assertIsDisplayed();shot("public-saved")
         val saved=runBlocking(Dispatchers.IO){app.database.recipeDao().recipes()};assertEquals(2,saved.size)

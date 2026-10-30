@@ -43,7 +43,10 @@ import java.util.UUID
         override suspend fun read(path: String, access: String): JSONObject = JSONObject()
         override suspend fun write(operation: PublicationOperation, file: File, access: String): JSONObject {
             writes += operation.method to operation.path
-            return JSONObject().put("likes", 13).put("forks", 3)
+            // The writer's finish() contract for a like: the response
+            // names the item and carries the new liked state.
+            return JSONObject().put("id", operation.path.split('/')[3]).put("liked", operation.method == "POST")
+                .put("likes", 13).put("forks", 3)
         }
     }
 
@@ -124,7 +127,8 @@ import java.util.UUID
             compose.onNodeWithTag("fork-target-0").performScrollTo().performTextReplacement("165")
             shot("public-fork-tweak")
             compose.onNodeWithTag("fork-save").performScrollTo().performClick()
-            compose.waitUntil(15000) { compose.onAllNodesWithTag("fork-save").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(15000) { compose.onAllNodesWithTag("fork-save").fetchSemanticsNodes().isEmpty() || compose.onAllNodesWithTag("fork-error").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("fork-error").assertDoesNotExist()
             waitFor("public-open-recipes")
             assertEquals(id, manager.state.value.savedDetailId)
 
