@@ -2,6 +2,19 @@ import SwiftUI
 import UIKit
 import UserNotifications
 
+/// Flowing Slice 3, E4 (spec §5): a finished cook opens on its story,
+/// and the one-time "Protect your cook log?" prompt's eligibility —
+/// the cook was ALREADY finished when it was opened (an in-session
+/// finish keeps the completion-choices flow), the prompt has never
+/// been shown, and this device has never synced with automatic sync
+/// off. Pure and matrix-tested (FlowingE4LogicTests); mirrors Android.
+enum FlowingE4 {
+    static func initialCookSection(status: String) -> String { status == "completed" ? "Timeline" : "Live" }
+    static func shouldPromptProtectLog(status: String, promptShown: Bool, lastSyncedAt: Int64, automaticSync: Bool) -> Bool {
+        status == "completed" && !promptShown && lastSyncedAt <= 0 && !automaticSync
+    }
+}
+
 /// Per-dish anti-jitter smoothers for the Live board's ETA (Slice 1's
 /// PaceRangeSmoother is a class; one instance per cook+dish, held across
 /// the board's one-second ticks without touching SwiftUI state).
@@ -10,8 +23,15 @@ private final class LivePaceSmoothers { var byDish: [String: PaceRangeSmoother] 
 struct CookDetailView: View {
     @Environment(CookStore.self) private var store
     @Environment(NativeTelemetryRuntime.self) private var telemetry
+    @Environment(NativeAccountCoordinator.self) private var account
+    @Environment(NativePrivateSyncCoordinator.self) private var sync
     let cookId: String
     @State private var section = "Live"
+    /// E4: the opening section and the protect prompt's eligibility are
+    /// latched from the cook's status when the screen first opens.
+    @State private var sectionLatched = false
+    @State private var protectEligibleAtOpen = false
+    @State private var protectPromptShown = UserDefaults.standard.bool(forKey: "protect-log-prompt-shown")
     @State private var paceSmoothers = LivePaceSmoothers()
     @State private var chartContext: LiveChartContext?
     @State private var notificationStatus: UNAuthorizationStatus?
@@ -273,6 +293,7 @@ struct CookDetailView: View {
                     }
                 }
                 .task { notificationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus }
+                .onAppear { latchInitialSection() }
                 .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
                 .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId, checkInRuleId: reminderCheckInRuleId) }
                 .task {
@@ -349,6 +370,20 @@ struct CookDetailView: View {
                 }
             } else { ContentUnavailableView("Cook not found", systemImage: "exclamationmark.triangle") }
         }
+    }
+    /// E4: derive the opening section and the protect prompt's
+    /// eligibility from the cook's status at first open, once. A cook
+    /// finished in-session never passes through here again, so it
+    /// keeps the completion-choices flow.
+    private func latchInitialSection() {
+        guard !sectionLatched, let cook else { return }
+        sectionLatched = true
+        section = FlowingE4.initialCookSection(status: cook.status)
+        protectEligibleAtOpen = cook.status == "completed"
+    }
+    private func latchProtectPrompt() {
+        protectPromptShown = true
+        UserDefaults.standard.set(true, forKey: "protect-log-prompt-shown")
     }
     private var shortcutBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -661,6 +696,22 @@ struct CookDetailView: View {
     private var timelineContent: some View {
         let linked = Set(store.library.logReadingLinks.compactMap { $0.objectValue?["readingId"]?.stringValue })
         return VStack(alignment: .leading, spacing: 12) {
+            // Flowing Slice 3 (E4): the one-time protect-your-log
+            // prompt leads the finished cook's story — eligible only
+            // when the cook was already finished at open, the prompt
+            // has never been shown, and this device has never synced
+            // with automatic sync off. Either action latches it.
+            if protectEligibleAtOpen, let current = cook,
+               FlowingE4.shouldPromptProtectLog(status: current.status, promptShown: protectPromptShown, lastSyncedAt: sync.presentation.lastSyncedAt, automaticSync: sync.presentation.automatic) {
+                TurnInCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TurnInBannerText("Protect your cook log?")
+                        Text("This cook lives only on this phone right now. Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                        Button("Protect my cook log") { latchProtectPrompt(); account.showingAccount = true }.buttonStyle(.borderedProminent).frame(minHeight: 44)
+                        Button("Not now") { latchProtectPrompt() }.buttonStyle(.bordered).frame(minHeight: 44)
+                    }
+                }.accessibilityIdentifier("protect-log-prompt")
+            }
             // TURN-IN (Slice 1): no in-tab title header — the segmented
             // control already says Timeline (same call as Android's kept
             // "Cook timeline" line, which is test-asserted there only).

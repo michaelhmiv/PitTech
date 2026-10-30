@@ -1,5 +1,6 @@
 import SwiftUI
 import ImageIO
+import UniformTypeIdentifiers
 
 struct NativePublicationView: View {
     @Environment(\.dismiss) private var dismiss
@@ -23,6 +24,10 @@ struct NativePublicationView: View {
     @State private var message: String?
     @State private var published: NativePublicationReceipt?
     @State private var lastUserId: String?
+    @State private var postedCard = false
+    @State private var cardPackRequested = false
+    @State private var exporting = false
+    @State private var exportDocument = PitTechArchiveDocument(data: Data())
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -45,7 +50,12 @@ struct NativePublicationView: View {
                 } else if let published {
                     Text(published.status == "pending_review" ? "Submitted for review" : "Published").font(PitTechFont.bannerTitle).accessibilityIdentifier("publication-complete")
                     if published.status == "pending_review" { Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.") }
-                    else { Link("Open public recipe", destination: URL(string: published.url)!); ShareLink("Share public link", item: URL(string: published.url)!) }
+                    else {
+                        Link("Open public recipe", destination: URL(string: published.url)!); ShareLink("Share public link", item: URL(string: published.url)!)
+                        // Flowing Slice 3 (Spread 07): the posted
+                        // recipe's card, QR footer and all.
+                        Button("Share posted card") { postedCard = true }.accessibilityIdentifier("publication-share-card")
+                    }
                     // J9: after publishing, the next step lands where the
                     // thing went — My Cookbook — not back at the draft.
                     NavigationLink("Open My cookbook") { NativeMyCookbookView() }.accessibilityIdentifier("publication-open-cookbook")
@@ -103,6 +113,13 @@ struct NativePublicationView: View {
             }
             .onChange(of: identity) { _, _ in invalidate() }.onChange(of: category) { _, _ in invalidate() }.onChange(of: kind) { _, _ in invalidate() }.onChange(of: updating) { _, _ in invalidate() }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
+            .sheet(isPresented: $postedCard, onDismiss: { if cardPackRequested { cardPackRequested = false; exportPack() } }) {
+                if let published { NavigationStack { NativeShareCardPreview(id: draft, publication: ShareCardPublication(itemId: published.id)) { cardPackRequested = true; postedCard = false } }.modifier(ScreenshotTextSize()) }
+            }
+            .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .pittechCookPack, defaultFilename: "PitTech-Recipe") { result in
+                if case .failure(let failure) = result { message = failure.localizedDescription }
+                exportDocument = PitTechArchiveDocument(data: Data())
+            }
             // Slice 8 (PL-15 / DD-10): completing sign-in returns to this
             // sheet on its own; cancelling the account sheet lands here too.
             .onChange(of: account.signedIn) { _, signedIn in if signedIn { signingIn = false } }
@@ -137,6 +154,12 @@ struct NativePublicationView: View {
         }
         guard account.stateUserId == user else { throw NativePublicationError.accountChanged }
         prepared = value; previewUser = user; reviewed = false
+    }
+    private func exportPack() {
+        Task { @MainActor in
+            do { exportDocument = PitTechArchiveDocument(data: try await store.exportCookPackAsync(draft, includeRecordedCook: false)); exporting = true }
+            catch { message = error.localizedDescription }
+        }
     }
     private func run(_ action: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }; busy = true; message = nil

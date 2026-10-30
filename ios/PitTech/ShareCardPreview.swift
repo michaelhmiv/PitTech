@@ -47,6 +47,7 @@ struct NativeShareCardPreview: View {
     @Environment(\.dismiss) private var dismiss
     let id: String
     var relay: ShareCardRelay? = nil
+    var publication: ShareCardPublication? = nil
     var onPack: () -> Void
     @State private var bytes: Data?
     @State private var error: String?
@@ -67,6 +68,7 @@ struct NativeShareCardPreview: View {
                 if working { ProgressView("Preparing card…") }
                 if let bytes, let image = UIImage(data:bytes) { Image(uiImage:image).resizable().scaledToFit().accessibilityLabel("Exact exported card preview").accessibilityIdentifier("share-card-preview") }
                 Text(theme.isPro ? "1080 × 1350 PNG · \(theme.name) theme" : "1080 × 1350 PNG · default theme").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                if let publication { Text("Posted-recipe card · the QR code opens \(publication.url)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted).accessibilityIdentifier("share-card-publication-note") }
                 ProEntryRow(entry: .themes)
                 if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag); Button("Retry image") { retry += 1 } }
                 Button("Share image") { sharing = true }.buttonStyle(.borderedProminent).frame(minHeight:44).disabled(bytes == nil || working).accessibilityIdentifier("card-share")
@@ -78,7 +80,7 @@ struct NativeShareCardPreview: View {
             .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Done") { dismiss() } } }
             .task(id:retry) {
                 working = true;error = nil
-                do { let prepared = try await store.prepareShareCard(id, relay: relay, themeOverride: theme.id, paletteOverride: palette.id);try Task.checkCancellation();bytes = try NativeShareCardRenderer.render(prepared) }
+                do { let prepared = try await store.prepareShareCard(id, relay: relay, publication: publication, themeOverride: theme.id, paletteOverride: palette.id);try Task.checkCancellation();bytes = try NativeShareCardRenderer.render(prepared) }
                 catch is CancellationError { }
                 catch { self.error = error.localizedDescription }
                 working = false
