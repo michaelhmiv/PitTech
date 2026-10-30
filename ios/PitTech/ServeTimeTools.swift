@@ -447,7 +447,7 @@ struct ServePlanEditorView: View {
             plan.serveAtUtcMillis = try ServeTimePlanner.localGoal(date: dateText, time: timeText, zoneId: zoneText, laterOffset: laterOffset)
             plan.zoneId = zoneText
             if plan.schedules.contains(where: { $0.evidenceNote == DishSchedule.unseededNote }) {
-                throw ServePlanError.invalid("Give every dish a duration range — open its durations and use its recorded range or type one in.")
+                throw ServePlanError.invalid("Review each dish's duration range.")
             }
             let resolved = PlanBoard.resolvedTimeline(plan: plan, chosenPitF: chosenPitF)
             let stretched = PlanBoard.stretchedPlan(plan, timeline: resolved)

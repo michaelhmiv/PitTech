@@ -242,16 +242,16 @@ import Foundation
         servePlanEditorChosenPitF = nil
     }
 
-    /// "Plan a serving time" from an empty slate.
+    /// "Plan a serving time" from an empty slate (Android's
+    /// planServeTime: a "Planned cook" book serving this time tomorrow).
     func newServePlan() {
-        let dinner = Self.planDinner()
-        let dish = PlaybookDishDraft(name: "Main dish", foodType: "Other")
+        let dish = PlaybookDishDraft(name: "Main dish", foodType: "Beef")
         let plan = ServePlan(
             book: CookPlaybook(
-                name: "New cook",
-                draft: PlaybookCookDraft(title: "New cook", dishes: [dish])
+                name: "Planned cook",
+                draft: PlaybookCookDraft(title: "Planned cook", dishes: [dish])
             ),
-            serveAtUtcMillis: Int64(dinner.timeIntervalSince1970 * 1000),
+            serveAtUtcMillis: Int64(Date.now.timeIntervalSince1970 * 1000) + 86_400_000,
             zoneId: TimeZone.current.identifier,
             schedules: [DishSchedule(dishIndex: 0, cookMinMinutes: 480, cookMaxMinutes: 600, evidenceNote: DishSchedule.unseededNote)]
         )
@@ -282,11 +282,16 @@ import Foundation
         )
         let dinnerMs = Int64(Self.planDinner().timeIntervalSince1970 * 1000)
         let dinnerDate = Self.localDateText(dinnerMs, zoneId: TimeZone.current.identifier)
-        if let existing = upcomingServePlans().first(where: { entry in
-            entry.plan.startedCookId == nil
-                && Self.localDateText(entry.plan.serveAtUtcMillis, zoneId: entry.plan.zoneId) == dinnerDate
-                && abs(entry.plan.serveAtUtcMillis - dinnerMs) <= 3 * 3_600_000
-        }) {
+        // Android's join rule: unstarted, same local date as dinner (in
+        // the device zone), within three hours — the closest such plan.
+        let existing = upcomingServePlans()
+            .filter { entry in
+                entry.plan.startedCookId == nil
+                    && Self.localDateText(entry.plan.serveAtUtcMillis, zoneId: TimeZone.current.identifier) == dinnerDate
+                    && abs(entry.plan.serveAtUtcMillis - dinnerMs) <= 3 * 3_600_000
+            }
+            .min { abs($0.plan.serveAtUtcMillis - dinnerMs) < abs($1.plan.serveAtUtcMillis - dinnerMs) }
+        if let existing {
             var plan = existing.plan
             var schedule = laneSchedule
             schedule.dishIndex = plan.book.draft.dishes.count
