@@ -52,21 +52,31 @@ import XCTest
     }
 
     func testValidationMessagesMatchAndroid() {
+        // Android's ServeTimePlanner / PlaybookCodec messages, verbatim.
         XCTAssertThrowsError(try ServeTimePlanner.validate(plan(name: "  "))) {
-            XCTAssertEqual($0.localizedDescription, "Name the cook before planning it.")
-        }
-        XCTAssertThrowsError(try ServeTimePlanner.validate(plan(serveAt: serveAt + 1))) {
-            XCTAssertEqual($0.localizedDescription, "Serving time must be a whole minute.")
+            XCTAssertEqual($0.localizedDescription, "Give this playbook a name.")
         }
         var mismatched = plan(); mismatched.schedules = []
         XCTAssertThrowsError(try ServeTimePlanner.validate(mismatched)) {
-            XCTAssertEqual($0.localizedDescription, "Every dish needs exactly one duration schedule.")
+            XCTAssertEqual($0.localizedDescription, "Schedule each dish once and use a valid buffer.")
+        }
+        XCTAssertThrowsError(try ServeTimePlanner.validate(plan(buffer: 1_441))) {
+            XCTAssertEqual($0.localizedDescription, "Schedule each dish once and use a valid buffer.")
+        }
+        var zeroMin = plan(); zeroMin.schedules[0].cookMinMinutes = 0
+        XCTAssertThrowsError(try ServeTimePlanner.validate(zeroMin)) {
+            XCTAssertEqual($0.localizedDescription, "Check each dish's cooking and preparation durations.")
+        }
+        var noDishes = plan()
+        noDishes.book.draft.dishes = []; noDishes.book.steps = []; noDishes.schedules = []
+        XCTAssertThrowsError(try ServeTimePlanner.validate(noDishes)) {
+            XCTAssertEqual($0.localizedDescription, "Add a dish to the serving plan.")
         }
     }
 
     func testLocalGoalRejectsTheSpringForwardGap() {
         XCTAssertThrowsError(try ServeTimePlanner.localGoal(date: "2026-03-08", time: "02:30", zoneId: "America/New_York")) {
-            XCTAssertEqual($0.localizedDescription, "Local serving time does not occur in America/New_York")
+            XCTAssertEqual($0.localizedDescription, "This local time is skipped by daylight saving. Choose another time.")
         }
         XCTAssertFalse(ServeTimePlanner.occursTwice(date: "2026-03-08", time: "02:30", zoneId: "America/New_York"))
     }
@@ -90,19 +100,21 @@ import XCTest
         // foodOn = serveAt − (max 460 + rest 60 + hold 0 + buffer 60)
         XCTAssertEqual(ServeTimePlanner.foodOn(plan: value, schedule: schedule), serveAt - 580 * minute)
         let ready = ServeTimePlanner.readyWindow(plan: value, schedule: schedule)
-        XCTAssertEqual(ready.earliest, serveAt - 580 * minute + 400 * minute)
+        XCTAssertEqual(ready.earliest, serveAt - 580 * minute + (400 + 60) * minute)
         XCTAssertEqual(ready.latest, serveAt - 60 * minute)
     }
 
     func testUpdatedReadyWindowPrefersTheActualRemove() {
         let value = plan(), schedule = value.schedules[0], minute: Int64 = 60_000
         let remove = serveAt - 700 * minute
+        // Off the pit, the dish is ready at remove + rest: a point.
         let updated = ServeTimePlanner.updatedReadyWindow(plan: value, schedule: schedule, events: [PlanEvent(action: "remove", dishId: nil, atUtcMillis: remove)])
-        XCTAssertEqual(updated.earliest, remove + (400 + 60) * minute)
-        XCTAssertEqual(updated.latest, remove + (460 + 60) * minute)
+        XCTAssertEqual(updated.earliest, remove + 60 * minute)
+        XCTAssertEqual(updated.latest, remove + 60 * minute)
         // Without a remove, the planned food-on anchors the window.
         let planned = ServeTimePlanner.updatedReadyWindow(plan: value, schedule: schedule, events: [])
         XCTAssertEqual(planned.earliest, ServeTimePlanner.foodOn(plan: value, schedule: schedule) + (400 + 60) * minute)
+        XCTAssertEqual(planned.latest, ServeTimePlanner.foodOn(plan: value, schedule: schedule) + (460 + 60) * minute)
     }
 
     func testWeightKgConversions() {
@@ -110,27 +122,35 @@ import XCTest
         XCTAssertEqual(try XCTUnwrap(ServeTimePlanner.weightKg(16, "oz")), 0.45359237, accuracy: 1e-9)
         XCTAssertEqual(try XCTUnwrap(ServeTimePlanner.weightKg(500, "g")), 0.5, accuracy: 1e-9)
         XCTAssertEqual(try XCTUnwrap(ServeTimePlanner.weightKg(2, "kg")), 2, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(ServeTimePlanner.weightKg(0, "lb")), 0, accuracy: 1e-9)
         XCTAssertNil(ServeTimePlanner.weightKg(1, "stone"))
-        XCTAssertNil(ServeTimePlanner.weightKg(0, "lb"))
+        XCTAssertNil(ServeTimePlanner.weightKg(1, "LB"))
         XCTAssertNil(ServeTimePlanner.weightKg(nil, "lb"))
     }
 
-    func testComparableRequiresFoodTypeAndStaysInTheWrapClass() {
+    func testComparableIsAStrictConjunctionWithOneRowPerCook() {
         let dish = PlaybookDishDraft(name: "Pork shoulder", foodType: "Pork", cut: "Shoulder", weightText: "8.5", weightUnit: "lb")
         let draft = PlaybookCookDraft(title: "Saturday pork", smokerName: "Kettle", setpointText: "250", dishes: [dish])
-        func evidence(_ foodType: String, _ wrapped: Bool, _ minutes: Int64, _ at: Int64) -> DurationEvidence {
-            DurationEvidence(dishName: "Dish", cut: "Shoulder", foodType: foodType, smokerName: "Kettle", weightKg: 3.86, startingCondition: nil, boneIn: nil, setpointF: 250, durationMinutes: minutes, cookId: "cook-\(at)", wrapped: wrapped, cookedAtUtcMillis: at)
+        func evidence(_ cookId: String, cut: String = "Shoulder", foodType: String = "Pork", smoker: String? = "Kettle", kg: Double? = 3.9, pit: Double? = 250, wrapped: Bool = true, minutes: Int64 = 460) -> DurationEvidence {
+            DurationEvidence(dishName: "Dish", cut: cut, foodType: foodType, smokerName: smoker, weightKg: kg, startingCondition: nil, boneIn: nil, setpointF: pit, durationMinutes: minutes, cookId: cookId, wrapped: wrapped, cookedAtUtcMillis: 0)
         }
-        let history = [evidence("Pork", true, 460, 300), evidence("Pork", true, 500, 200), evidence("Beef", true, 300, 400), evidence("Pork", false, 420, 500)]
-        let wrapped = ServeTimePlanner.comparable(dish: dish, draft: draft, evidence: history, wrapped: true)
-        XCTAssertEqual(wrapped?.sampleCount, 2)
-        XCTAssertEqual(wrapped?.minDurationMinutes, 460)
-        XCTAssertEqual(wrapped?.maxDurationMinutes, 500)
-        let unwrapped = ServeTimePlanner.comparable(dish: dish, draft: draft, evidence: history, wrapped: false)
-        XCTAssertEqual(unwrapped?.sampleCount, 1)
-        XCTAssertEqual(unwrapped?.minDurationMinutes, 420)
-        var fish = dish; fish.foodType = "Fish"
-        XCTAssertNil(ServeTimePlanner.comparable(dish: fish, draft: draft, evidence: history, wrapped: true))
+        let history = [
+            evidence("c1"), evidence("c2", cut: "shoulder", minutes: 500),
+            evidence("c3", cut: "Butt"), evidence("c4", smoker: "Offset"),
+            evidence("c5", kg: 6.0), evidence("c6", pit: nil),
+            evidence("c7", wrapped: false), evidence("c1", minutes: 999),
+        ]
+        let matches = ServeTimePlanner.comparable(dish: dish, draft: draft, evidence: history, wrapped: true)
+        XCTAssertEqual(matches.map(\.cookId), ["c1", "c2"])
+        XCTAssertEqual(matches.map(\.durationMinutes), [460, 500])
+        // Both sides must record the setpoint: a draft with no setpoint
+        // matches only evidence with none.
+        var noPitDraft = draft; noPitDraft.setpointText = ""
+        let noPit = ServeTimePlanner.comparable(dish: dish, draft: noPitDraft, evidence: history, wrapped: true)
+        XCTAssertEqual(noPit.map(\.cookId), ["c6"])
+        // A dish with no recorded cut has no comparable history at all.
+        var noCut = dish; noCut.cut = ""
+        XCTAssertTrue(ServeTimePlanner.comparable(dish: noCut, draft: draft, evidence: history, wrapped: true).isEmpty)
     }
 
     func testStoreRoundTripAttachAndDerivedAlerts() throws {

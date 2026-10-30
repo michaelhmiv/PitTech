@@ -281,7 +281,7 @@ struct ServePlanEditorView: View {
                     DishScheduleEditorView(
                         dish: plan.book.draft.dishes[index],
                         draft: plan.book.draft,
-                        wrapped: plan.book.steps.contains { $0.action == "wrap" && ($0.dishIndex == index || $0.dishIndex == nil) },
+                        wrapped: plan.book.steps.contains { $0.action == "wrap" && $0.dishIndex == index },
                         evidence: store.planEvidence(),
                         schedule: Binding(
                             get: { plan.schedules[index] },
@@ -471,9 +471,17 @@ struct DishScheduleEditorView: View {
     let evidence: [DurationEvidence]
     @Binding var schedule: DishSchedule
     @State private var error: String?
+    @State private var initialMin: Int64?
+    @State private var initialMax: Int64?
+    @State private var appliedMin: Int64?
+    @State private var appliedMax: Int64?
 
-    private var recordedRange: DurationEvidenceRange? {
-        ServeTimePlanner.comparable(dish: dish, draft: draft, evidence: evidence, wrapped: wrapped)
+    /// Android's gate + matcher: a schedule naming different equipment
+    /// than the plan's smoker has no comparable history by definition.
+    private var matches: [DurationEvidence] {
+        if !schedule.method.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           schedule.method.lowercased() != draft.smokerName.lowercased() { return [] }
+        return ServeTimePlanner.comparable(dish: dish, draft: draft, evidence: evidence, wrapped: wrapped)
     }
 
     var body: some View {
@@ -486,17 +494,29 @@ struct DishScheduleEditorView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                if let range = recordedRange {
+                if matches.isEmpty {
                     Section("Recorded range") {
-                        Text("\(range.sampleCount) similar recorded cook\(range.sampleCount == 1 ? "" : "s") ran \(HoursField.format(range.minDurationMinutes))–\(HoursField.format(range.maxDurationMinutes)) h on the pit (\(range.wrapped ? "wrapped" : "unwrapped")).")
+                        Text("No comparable history. Enter a range you are comfortable planning around.")
                             .font(.footnote)
-                        Button("Use recorded range") {
-                            schedule.cookMinMinutes = range.minDurationMinutes
-                            schedule.cookMaxMinutes = range.maxDurationMinutes
-                            if schedule.evidenceNote == DishSchedule.unseededNote {
-                                schedule.evidenceNote = "Your duration range"
+                    }
+                } else {
+                    Section("Recorded range") {
+                        Text("\(matches.count) comparable recorded cooks · \(matches.map(\.durationMinutes).min() ?? 0)–\(matches.map(\.durationMinutes).max() ?? 0) min from Food on to Remove. Rest is separate.")
+                            .font(.footnote)
+                        if matches.count == 1 {
+                            Text("One cook is a reference. Enter your own planning range.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                        if matches.count >= 2 {
+                            Button("Use recorded range") {
+                                let low = matches.map(\.durationMinutes).min() ?? schedule.cookMinMinutes
+                                let high = matches.map(\.durationMinutes).max() ?? schedule.cookMaxMinutes
+                                schedule.cookMinMinutes = low
+                                schedule.cookMaxMinutes = high
+                                schedule.evidenceCount = matches.count
+                                schedule.evidenceNote = "\(matches.count) recorded cooks with similar cut, smoker, size, start, setpoint and wrap"
+                                appliedMin = low; appliedMax = high
                             }
-                            schedule.evidenceCount = range.sampleCount
                         }
                     }
                 }
@@ -531,18 +551,34 @@ struct DishScheduleEditorView: View {
             }
             .scrollContentBackground(.hidden)
             .background(PitTechStyle.canvas.ignoresSafeArea())
+            .onAppear {
+                if initialMin == nil { initialMin = schedule.cookMinMinutes; initialMax = schedule.cookMaxMinutes }
+            }
             .navigationTitle("Durations")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
-                        do {
-                            var probe = schedule
-                            probe.cookMinMinutes = max(1, probe.cookMinMinutes)
-                            if probe.cookMaxMinutes < probe.cookMinMinutes { probe.cookMaxMinutes = probe.cookMinMinutes }
-                            schedule = probe
-                            dismiss()
+                        var probe = schedule
+                        probe.cookMinMinutes = max(1, probe.cookMinMinutes)
+                        if probe.cookMaxMinutes < probe.cookMinMinutes { probe.cookMaxMinutes = probe.cookMinMinutes }
+                        // Android's durations editor: typing your own
+                        // durations discards the recorded count and note;
+                        // the recorded range, once applied, stands. The
+                        // unseeded sentinel never survives a save.
+                        if let initialMin, let initialMax,
+                           probe.cookMinMinutes != initialMin || probe.cookMaxMinutes != initialMax {
+                            let matchesApplied = appliedMin.map { probe.cookMinMinutes == $0 && probe.cookMaxMinutes == appliedMax } ?? false
+                            if !matchesApplied {
+                                probe.evidenceCount = 0
+                                probe.evidenceNote = "Your duration range"
+                            }
                         }
+                        if probe.evidenceNote == DishSchedule.unseededNote {
+                            probe.evidenceNote = "Your duration range"
+                        }
+                        schedule = probe
+                        dismiss()
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) {

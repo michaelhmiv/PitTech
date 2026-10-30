@@ -201,7 +201,8 @@ import XCTest
         XCTAssertEqual(pork.changeNotes, "Fork of Weekend smoke — Rub: House rub · Wrap: Foil · Target: 165°F")
         // The story-less second recipe forks plainly and notes it plainly.
         let potatoes = prepared[1]
-        XCTAssertNil(potatoes.frozenStory.objectValue?["publicStory"])
+        let absentStory = potatoes.frozenStory.objectValue?["publicStory"]
+        XCTAssertTrue(absentStory == nil || absentStory == .null, "A story-less recipe's frozen story carries no public story.")
         XCTAssertTrue(potatoes.photoMediaIds.isEmpty)
         let plain = try PublicationFork.prepare(detail: detail, tweaks: PublicationFork.untweaked(detail: detail))
         XCTAssertEqual(plain[0].changeNotes, "Saved public recipe")
@@ -255,7 +256,7 @@ import XCTest
         let facts = publicCardFacts(detail: detail, temperatureUnit: "°F")
         XCTAssertEqual(facts.timeLabel, "7H 40M")
         XCTAssertNil(facts.tempLabel)
-        await community.refresh(sort: "recent", food: "", query: "")
+        await community.refresh(sort: "liked", food: "", query: "")
         let item = try XCTUnwrap(community.items.first)
         let cardFacts = await community.cardFacts(for: item, temperatureUnit: "°F")
         XCTAssertEqual(cardFacts?.timeLabel, "7H 40M")

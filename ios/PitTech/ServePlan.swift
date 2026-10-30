@@ -132,7 +132,7 @@ struct DurationEvidence: Equatable {
     var dishName: String
     var cut: String
     var foodType: String
-    var smokerName: String
+    var smokerName: String?
     var weightKg: Double?
     var startingCondition: String?
     var boneIn: Bool?
@@ -141,13 +141,6 @@ struct DurationEvidence: Equatable {
     var cookId: String
     var wrapped: Bool
     var cookedAtUtcMillis: Int64
-}
-
-struct DurationEvidenceRange: Equatable {
-    var sampleCount: Int
-    var minDurationMinutes: Int64
-    var maxDurationMinutes: Int64
-    var wrapped: Bool
 }
 
 /// A plan-relevant cook event (Android's PlanEvent): an action resolved to
@@ -215,43 +208,76 @@ enum PlaybookCodec {
     static let actions: Set<String> = ["food_on", "spritz", "wrap", "check_in", "remove", "rest_start", "hold_start", "dish_done"]
     static let triggers: Set<String> = ["manual", "elapsed", "after_action", "temperature", "clock"]
 
+    /// Mirrors Android's PlaybookCodec.validate rule for rule, messages
+    /// included: the two platforms reject the same playbook with the
+    /// same words.
     static func validate(_ playbook: CookPlaybook) throws {
-        if playbook.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ServePlanError.invalid("Name the playbook.")
+        let stages: Set<String> = ["prep", "cooking", "resting", "holding"]
+        if playbook.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || playbook.name.count > 200 {
+            throw ServePlanError.invalid("Give this playbook a name.")
         }
-        if playbook.draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ServePlanError.invalid("Name the cook.")
+        if playbook.draft.dishes.count > 30 || playbook.steps.count > 100 {
+            throw ServePlanError.invalid("This playbook has too many dishes or steps.")
         }
-        if playbook.draft.dishes.isEmpty {
-            throw ServePlanError.invalid("Add at least one dish.")
+        if Set(playbook.steps.map(\.id)).count != playbook.steps.count {
+            throw ServePlanError.invalid("Each step needs its own ID.")
         }
-        for dish in playbook.draft.dishes {
-            if dish.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || dish.foodType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                throw ServePlanError.invalid("Every dish needs a name and food type.")
-            }
-        }
-        var ids = Set<String>()
         for step in playbook.steps {
-            if !ids.insert(step.id).inserted {
-                throw ServePlanError.invalid("Playbook step ids must be unique.")
+            if step.id.range(of: "^[A-Za-z0-9_-]{1,100}$", options: .regularExpression) == nil {
+                throw ServePlanError.invalid("Each step needs a valid ID.")
             }
-            if !actions.contains(step.action) {
-                throw ServePlanError.invalid("Unsupported playbook action: \(step.action)")
+            if step.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !actions.contains(step.action) || !triggers.contains(step.trigger) || !stages.contains(step.stage) {
+                throw ServePlanError.invalid("Choose a valid action and trigger for each step.")
             }
             if let dish = step.dishIndex, dish < 0 || dish >= playbook.draft.dishes.count {
-                throw ServePlanError.invalid("A playbook step names a missing dish.")
+                throw ServePlanError.invalid("Choose a dish for this step.")
             }
-            if step.minutes < 0 || step.minutes > 10_080 {
-                throw ServePlanError.invalid("Step minutes must be between 0 and 10080.")
+            if step.minutes < 0 || step.minutes > 100_800
+                || (step.repeatEveryMinutes.map { $0 < 1 || $0 > 10_080 } ?? false) {
+                throw ServePlanError.invalid("Use a positive interval, up to a week.")
+            }
+            if step.trigger == "temperature",
+               !(step.temperatureF.map { $0.isFinite && $0 >= 32 && $0 <= 600 } ?? false) {
+                throw ServePlanError.invalid("Enter a temperature between 32 and 600 °F.")
+            }
+            if step.trigger == "clock", step.clockAtUtcMillis == nil {
+                throw ServePlanError.invalid("Choose a time for this step.")
+            }
+            if !actions.contains(step.anchor) {
+                throw ServePlanError.invalid("Choose an anchor action.")
             }
         }
-        for target in playbook.targets {
-            if let dish = target.dishIndex, dish < 0 || dish >= playbook.draft.dishes.count {
-                throw ServePlanError.invalid("A playbook target names a missing dish.")
+        // after_action dependencies: a step anchors on the most recent
+        // earlier step with its anchor action (or the first, looking
+        // forward); a step that can only anchor on itself is refused,
+        // and dependency loops are refused.
+        var dependencies: [String: String] = [:]
+        for (index, step) in playbook.steps.enumerated() where step.trigger == "after_action" {
+            let providers = playbook.steps.enumerated().filter {
+                $0.offset != index && $0.element.action == step.anchor
+                    && ($0.element.dishIndex == step.dishIndex || $0.element.dishIndex == nil)
             }
-            if !target.value.isFinite {
-                throw ServePlanError.invalid("Playbook target values must be finite.")
+            let provider = providers.last { $0.offset < index } ?? providers.first
+            if provider == nil, step.action == step.anchor, step.repeatEveryMinutes == nil {
+                throw ServePlanError.invalid("\(step.title) depends on itself. Choose another action or a recurring check.")
+            }
+            if let provider { dependencies[step.id] = provider.element.id }
+        }
+        var visiting = Set<String>(), visited = Set<String>()
+        func visit(_ id: String) throws {
+            if visited.contains(id) { return }
+            if !visiting.insert(id).inserted {
+                throw ServePlanError.invalid("Steps depend on each other in a loop. Use Food on or an independent action as the anchor.")
+            }
+            if let next = dependencies[id] { try visit(next) }
+            visiting.remove(id); visited.insert(id)
+        }
+        for step in playbook.steps { try visit(step.id) }
+        for target in playbook.targets {
+            if !target.value.isFinite || !["°F", "°C"].contains(target.unit)
+                || (target.dishIndex.map { $0 < 0 || $0 >= playbook.draft.dishes.count } ?? false) {
+                throw ServePlanError.invalid("A target is invalid.")
             }
         }
     }
@@ -456,40 +482,28 @@ enum PlaybookCodec {
 // MARK: - ServeTimePlanner
 
 enum ServeTimePlanner {
+    /// Mirrors Android's ServeTimePlanner.validate: the playbook rules
+    /// first, then the plan-level rules with Android's messages.
     static func validate(_ plan: ServePlan) throws {
-        if plan.book.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ServePlanError.invalid("Name the cook before planning it.")
-        }
         try PlaybookCodec.validate(plan.book)
         if TimeZone(identifier: plan.zoneId) == nil {
             throw ServePlanError.invalid("Choose a valid time zone.")
         }
-        if plan.schedules.isEmpty {
-            throw ServePlanError.invalid("Add at least one dish schedule.")
+        if plan.book.draft.dishes.isEmpty {
+            throw ServePlanError.invalid("Add a dish to the serving plan.")
         }
-        if plan.bufferMinutes < 0 || plan.bufferMinutes > 1_440 {
-            throw ServePlanError.invalid("Serving buffer must be between 0 and 1440 minutes.")
-        }
-        if plan.serveAtUtcMillis <= 0 || plan.serveAtUtcMillis % 60_000 != 0 {
-            throw ServePlanError.invalid("Serving time must be a whole minute.")
-        }
-        if Set(plan.schedules.map(\.dishIndex)) != Set(0 ..< plan.book.draft.dishes.count)
-            || plan.schedules.count != plan.book.draft.dishes.count {
-            throw ServePlanError.invalid("Every dish needs exactly one duration schedule.")
+        if plan.bufferMinutes < 0 || plan.bufferMinutes > 1_440
+            || plan.schedules.map(\.dishIndex).sorted() != Array(0 ..< plan.book.draft.dishes.count) {
+            throw ServePlanError.invalid("Schedule each dish once and use a valid buffer.")
         }
         for schedule in plan.schedules {
-            if schedule.cookMinMinutes <= 0 {
-                throw ServePlanError.invalid("Minimum cook duration must be positive.")
-            }
-            if schedule.cookMaxMinutes < schedule.cookMinMinutes || schedule.cookMaxMinutes > 100_800 {
-                throw ServePlanError.invalid("Maximum cook duration is outside the supported range.")
-            }
-            for duration in [schedule.prepMinutes, schedule.preheatMinutes, schedule.restMinutes, schedule.holdMinutes]
-            where duration < 0 || duration > 10_080 {
-                throw ServePlanError.invalid("Plan durations must be between 0 and 10080 minutes.")
-            }
-            if let pit = schedule.pitTemperatureF, !pit.isFinite {
-                throw ServePlanError.invalid("Target pit temperature must be finite.")
+            let stagesValid = [schedule.prepMinutes, schedule.preheatMinutes, schedule.restMinutes, schedule.holdMinutes]
+                .allSatisfy { $0 >= 0 && $0 <= 10_080 }
+            if schedule.cookMinMinutes <= 0
+                || schedule.cookMaxMinutes < schedule.cookMinMinutes || schedule.cookMaxMinutes > 100_800
+                || !stagesValid
+                || (schedule.pitTemperatureF.map { !$0.isFinite } ?? false) {
+                throw ServePlanError.invalid("Check each dish's cooking and preparation durations.")
             }
         }
     }
@@ -570,7 +584,7 @@ enum ServeTimePlanner {
             pitTemperatureF: fieldDouble(object, "pitF"),
             method: fieldString(object, "method") ?? "",
             evidenceCount: Int(fieldLong(object, "count") ?? 0),
-            evidenceNote: fieldString(object, "note") ?? DishSchedule.unseededNote
+            evidenceNote: fieldString(object, "note") ?? "Your duration range"
         )
     }
 
@@ -621,7 +635,7 @@ enum ServeTimePlanner {
         }
         candidates.sort()
         guard let first = candidates.first else {
-            throw ServePlanError.invalid("Local serving time does not occur in \(zoneId)")
+            throw ServePlanError.invalid("This local time is skipped by daylight saving. Choose another time.")
         }
         return laterOffset ? candidates.last! : first
     }
@@ -664,20 +678,23 @@ enum ServeTimePlanner {
         plan.serveAtUtcMillis - (schedule.cookMaxMinutes + schedule.restMinutes + schedule.holdMinutes + plan.bufferMinutes) * 60_000
     }
 
+    /// The planned ready window (Android's PlannedWindow): earliest is
+    /// food-on + shortest cook + rest; latest is the serve moment minus
+    /// hold and buffer (the rest already happened by then).
     static func readyWindow(plan: ServePlan, schedule: DishSchedule) -> (earliest: Int64, latest: Int64) {
-        (foodOn(plan: plan, schedule: schedule) + schedule.cookMinMinutes * 60_000,
-         plan.serveAtUtcMillis - plan.bufferMinutes * 60_000)
+        (foodOn(plan: plan, schedule: schedule) + (schedule.cookMinMinutes + schedule.restMinutes) * 60_000,
+         plan.serveAtUtcMillis - (schedule.holdMinutes + plan.bufferMinutes) * 60_000)
     }
 
-    /// Once real events exist, the ready window follows them: a dish that
-    /// came off projects its remove + duration range + rest; a dish still
-    /// on follows its actual food-on. Mirrors Android's updatedReadyWindow;
-    /// `events` arrive already scoped to the dish (the store scopes them).
+    /// Once real events exist, the ready window follows them: a dish
+    /// that came off is ready at remove + rest (a point, not a range);
+    /// a dish still on follows its actual food-on. Mirrors Android's
+    /// updatedReadyWindow; `events` arrive already scoped to the dish
+    /// (the store scopes them: the dish's own events plus cook-wide).
     static func updatedReadyWindow(plan: ServePlan, schedule: DishSchedule, events: [PlanEvent]) -> (earliest: Int64, latest: Int64) {
         if let remove = events.filter({ $0.action == "remove" }).map(\.atUtcMillis).max() {
-            let earliest = remove + (schedule.cookMinMinutes + schedule.restMinutes) * 60_000
-            let latest = remove + (schedule.cookMaxMinutes + schedule.restMinutes) * 60_000
-            return (earliest, latest)
+            let ready = remove + schedule.restMinutes * 60_000
+            return (ready, ready)
         }
         let foodOnActual = events.filter { $0.action == "food_on" }.map(\.atUtcMillis).max()
         let base = foodOnActual ?? foodOn(plan: plan, schedule: schedule)
@@ -685,10 +702,11 @@ enum ServeTimePlanner {
                 base + (schedule.cookMaxMinutes + schedule.restMinutes) * 60_000)
     }
 
-    /// Cross-unit weight for evidence matching (Android's weightKg).
+    /// Cross-unit weight for evidence matching (Android's weightKg:
+    /// exact unit spellings, no positivity rule — zero converts to zero).
     static func weightKg(_ value: Double?, _ unit: String?) -> Double? {
-        guard let value, value > 0 else { return nil }
-        switch (unit ?? "lb").lowercased() {
+        guard let value else { return nil }
+        switch unit ?? "lb" {
         case "lb": return value * 0.45359237
         case "oz": return value * 0.028349523125
         case "g": return value / 1000
@@ -706,36 +724,38 @@ enum ServeTimePlanner {
         }
     }
 
-    /// The recorded range for one draft dish: same-wrap-class evidence
-    /// only, best match by Android's scoring, and a food-type match is
-    /// required before any range is offered.
-    static func comparable(dish: PlaybookDishDraft, draft: PlaybookCookDraft, evidence: [DurationEvidence], wrapped: Bool) -> DurationEvidenceRange? {
-        let sameWrap = evidence.filter { $0.wrapped == wrapped }
-        if sameWrap.isEmpty { return nil }
-        func score(_ candidate: DurationEvidence) -> Int {
-            var value = 0
-            if candidate.foodType.lowercased() == dish.foodType.lowercased() { value += 3 }
-            if !dish.cut.isEmpty, !candidate.cut.isEmpty, candidate.cut.lowercased() == dish.cut.lowercased() { value += 2 }
-            if !draft.smokerName.isEmpty, !candidate.smokerName.isEmpty, candidate.smokerName.lowercased() == draft.smokerName.lowercased() { value += 2 }
-            if let candidateSet = candidate.setpointF, let draftSet = fahrenheit(Double(draft.setpointText) ?? .nan, unit: draft.temperatureUnit), draftSet.isFinite, abs(candidateSet - draftSet) <= 25 { value += 1 }
-            if let candidateKg = candidate.weightKg, let dishKg = weightKg(Double(dish.weightText), dish.weightUnit), abs(candidateKg - dishKg) <= max(candidateKg, dishKg) * 0.15 { value += 1 }
-            if let condition = dish.startingCondition, let candidateCondition = candidate.startingCondition, candidateCondition.lowercased() == condition.lowercased() { value += 1 }
-            if let bone = dish.boneIn, let candidateBone = candidate.boneIn, candidateBone == bone { value += 1 }
-            return value
+    /// The comparable recorded cooks for one draft dish (Android's
+    /// ServeTimePlanner.comparable): a strict conjunction, not a score —
+    /// the dish's cut must be recorded and equal, food type and smoker
+    /// must match, wrap class, starting condition and bone must be
+    /// equal, and weight / setpoint must both be recorded on both sides
+    /// or both absent (within 25% / 25 °F when recorded). One row per
+    /// source cook, first in evidence order.
+    static func comparable(dish: PlaybookDishDraft, draft: PlaybookCookDraft, evidence: [DurationEvidence], wrapped: Bool) -> [DurationEvidence] {
+        let dishKg = weightKg(Double(dish.weightText), dish.weightUnit)
+        let pit = Double(draft.setpointText).flatMap { fahrenheit($0, unit: draft.temperatureUnit) }
+        let trimmedCut = dish.cut.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSmoker = draft.smokerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var seenCooks = Set<String>()
+        return evidence.filter { candidate in
+            guard !trimmedCut.isEmpty,
+                  candidate.cut.lowercased() == trimmedCut.lowercased(),
+                  candidate.foodType.lowercased() == dish.foodType.lowercased(),
+                  candidate.smokerName?.lowercased() == trimmedSmoker.lowercased(),
+                  candidate.wrapped == wrapped,
+                  candidate.startingCondition == dish.startingCondition,
+                  candidate.boneIn == dish.boneIn else { return false }
+            switch (dishKg, candidate.weightKg) {
+            case (nil, nil): break
+            case let (dishKg?, candidateKg?): guard abs(dishKg - candidateKg) <= dishKg * 0.25 else { return false }
+            default: return false
+            }
+            switch (pit, candidate.setpointF) {
+            case (nil, nil): break
+            case let (pit?, candidatePit?): guard abs(pit - candidatePit) <= 25 else { return false }
+            default: return false
+            }
+            return seenCooks.insert(candidate.cookId).inserted
         }
-        var best: DurationEvidence?
-        var bestScore = Int.min
-        for candidate in sameWrap {
-            let candidateScore = score(candidate)
-            if candidateScore > bestScore { bestScore = candidateScore; best = candidate }
-        }
-        guard let best, best.foodType.lowercased() == dish.foodType.lowercased() else { return nil }
-        let peers = sameWrap.filter { $0.foodType.lowercased() == dish.foodType.lowercased() }
-        return DurationEvidenceRange(
-            sampleCount: peers.count,
-            minDurationMinutes: peers.map(\.durationMinutes).min() ?? best.durationMinutes,
-            maxDurationMinutes: peers.map(\.durationMinutes).max() ?? best.durationMinutes,
-            wrapped: wrapped
-        )
     }
 }

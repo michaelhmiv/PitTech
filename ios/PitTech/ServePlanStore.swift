@@ -98,14 +98,14 @@ import Foundation
                 guard foodOns.count == 1, removes.count == 1,
                       let foodOn = foodOns.first, let remove = removes.first,
                       remove.at > foodOn.at else { continue }
-                let duration = Int64(((remove.at - foodOn.at) / 60_000).rounded())
+                let duration = Int64((remove.at - foodOn.at) / 60_000)
                 guard (1 ... 100_800).contains(duration) else { continue }
                 let row = library.dishes.first { $0.objectValue?["id"]?.stringValue == dish.id }?.objectValue
                 evidence.append(DurationEvidence(
                     dishName: dish.name,
                     cut: row?["cut"]?.stringValue ?? "",
                     foodType: row?["foodType"]?.stringValue ?? "Other",
-                    smokerName: cook.smokerName ?? "",
+                    smokerName: cook.smokerName,
                     weightKg: ServeTimePlanner.weightKg(row?["weightValue"]?.numberValue, row?["weightUnit"]?.stringValue),
                     startingCondition: row?["startingCondition"]?.stringValue,
                     boneIn: row?["boneIn"]?.boolValue,
@@ -117,7 +117,9 @@ import Foundation
                 ))
             }
         }
-        return evidence.sorted { $0.cookedAtUtcMillis > $1.cookedAtUtcMillis }
+        // Library order (oldest first), like Android's DAO iteration —
+        // comparable's one-row-per-cook rule keeps the first match.
+        return evidence
     }
 
     /// A cook's plan-relevant events, expanded per dish scope; pass a
@@ -138,10 +140,10 @@ import Foundation
     func attachServePlan(_ id: String, cookId: String, orderedDishIds: [String]) throws {
         guard let record = companionRecord(id), record["kind"]?.stringValue == "upcoming",
               let plan = decodePlan(record) else {
-            throw ServePlanError.invalid("That serving plan is no longer available.")
+            throw ServePlanError.invalid("This scheduled cook is no longer saved.")
         }
         guard plan.startedCookId == nil else {
-            throw ServePlanError.invalid("That serving plan was already started.")
+            throw ServePlanError.invalid("This scheduled cook has already started.")
         }
         guard orderedDishIds.count == plan.book.draft.dishes.count else {
             throw ServePlanError.invalid("Update the serving plan when changing its dish list, then start the cook.")
