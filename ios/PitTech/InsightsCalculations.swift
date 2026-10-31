@@ -75,7 +75,28 @@ struct InsightArchiveInput: Decodable {
     let lifecycles: [InsightLifecycleInput]
     /// Recorded targets (Slice 6); archives decoded from older fixtures
     /// simply carry none.
-    let targets: [InsightTargetInput] = []
+    let targets: [InsightTargetInput]
+
+    /// Declared explicitly (not left to synthesis) so the `targets`
+    /// parameter is reliably available — with its default — at every
+    /// construction site, alongside the hand-written decoder below.
+    init(
+        cooks: [InsightCookInput],
+        dishes: [InsightDishInput],
+        events: [InsightEventInput],
+        readings: [InsightReadingInput],
+        results: [InsightResultInput],
+        lifecycles: [InsightLifecycleInput],
+        targets: [InsightTargetInput] = []
+    ) {
+        self.cooks = cooks
+        self.dishes = dishes
+        self.events = events
+        self.readings = readings
+        self.results = results
+        self.lifecycles = lifecycles
+        self.targets = targets
+    }
 }
 
 extension InsightArchiveInput {
