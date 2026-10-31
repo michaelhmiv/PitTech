@@ -10,8 +10,11 @@ import PhotosUI
 struct LegacyRemindersSection: View {
     @Environment(CookStore.self) private var store
     let cookId: String
-    @State private var showingComposer = false
-    @State private var checkIn: LegacyReminder?
+    /// Presentation lives at the Reminders surface's root (the same
+    /// level as its own sheets): presentation modifiers attached
+    /// inside a List section do not reliably present.
+    @Binding var showingComposer: Bool
+    @Binding var checkIn: LegacyReminder?
     @State private var error: String?
 
     private var pending: [LegacyReminder] { store.legacyReminders(cookId: cookId).filter { $0.status == "pending" } }
@@ -43,12 +46,6 @@ struct LegacyRemindersSection: View {
             if let error { Text(error).foregroundStyle(PitTechStyle.flag) }
         } header: {
             Text("Cook reminders")
-        }
-        .sheet(isPresented: $showingComposer) {
-            LegacyReminderComposer(cookId: cookId)
-        }
-        .sheet(item: $checkIn) { reminder in
-            LegacyReminderCheckInView(reminder: reminder)
         }
     }
 }

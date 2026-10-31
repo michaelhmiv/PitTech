@@ -46,8 +46,11 @@ struct CookDetailView: View {
     @State private var finishing = false
     @State private var completionChoices = false
     @State private var showingDevices = false
-    @State private var showingReminders = false
-    @State private var showingAlerts = false
+    /// One pushed sub-surface at a time: two stacked
+    /// navigationDestination(isPresented:) modifiers on one view can
+    /// silently starve the second, so Reminders and Alerts (#183)
+    /// share a single route-driven destination.
+    @State private var detailRoute: String?
     @State private var alertFocusId: String?
     @State private var legacyCheckIn: LegacyReminder?
     @State private var showingResults = false
@@ -325,8 +328,13 @@ struct CookDetailView: View {
                 .task { CrashDiagnostics.shared.recordOpenCook(cookId) }
                 .onAppear { latchInitialSection() }
                 .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
-                .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId, checkInRuleId: reminderCheckInRuleId) }
-                .navigationDestination(isPresented: $showingAlerts) { CookAlertsView(cookId: cookId, focusAlertId: alertFocusId) }
+                .navigationDestination(isPresented: Binding(get: { detailRoute != nil }, set: { if !$0 { detailRoute = nil } })) {
+                    if detailRoute == "alerts" {
+                        CookAlertsView(cookId: cookId, focusAlertId: alertFocusId)
+                    } else {
+                        MealRemindersView(cookId: cookId, checkInRuleId: reminderCheckInRuleId)
+                    }
+                }
                 .sheet(item: $legacyCheckIn) { reminder in LegacyReminderCheckInView(reminder: reminder) }
                 .task {
                     // PL-02: a reminder notification tap opens that reminder's
@@ -334,14 +342,14 @@ struct CookDetailView: View {
                     // check-in section), not just the cook.
                     if let ruleId = store.notificationReminderRuleId, store.reminderRule(ruleId)?["cookId"]?.stringValue == cookId {
                         reminderCheckInRuleId = ruleId
-                        showingReminders = true
+                        detailRoute = "reminders"
                         store.notificationReminderRuleId = nil
                     }
                     // PL-03 (#183): an alert tap opens the Alerts surface
                     // at that rule, not just the cook.
                     if let alertId = store.notificationAlertId, store.alertEntry(alertId)?.cookId == cookId {
                         alertFocusId = alertId
-                        showingAlerts = true
+                        detailRoute = "alerts"
                         store.notificationAlertId = nil
                     }
                     // #183: a legacy reminder tap opens its "How did it
@@ -446,7 +454,7 @@ struct CookDetailView: View {
                 Button { open() } label: { Label("Log", systemImage: "note.text").frame(minHeight: 44) }.accessibilityIdentifier("meal-log")
                 Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer").frame(minHeight: 44) }
                 Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera").frame(minHeight: 44) }
-                Button { showingReminders = true } label: { Label("Reminders", systemImage: "bell").frame(minHeight: 44) }
+                Button { detailRoute = "reminders" } label: { Label("Reminders", systemImage: "bell").frame(minHeight: 44) }
             }.font(.caption).buttonStyle(.bordered).fixedSize(horizontal: true, vertical: false).frame(minHeight: 44)
         }.frame(height: quickBarHeight)
     }
@@ -515,12 +523,12 @@ struct CookDetailView: View {
                     }
                 }
                 LivePanel(id: "reminders", title: "Reminders", summary: remindersSummary) {
-                    Button("Meal reminders") { showingReminders = true }
+                    Button("Meal reminders") { detailRoute = "reminders" }
                 }
                 // #183: the Cook Alerts panel — Android's Live alerts
                 // surface; the strip above carries the live state.
                 LivePanel(id: "alerts", title: "Alerts", summary: store.alertStripSummary(cookId: cookId)) {
-                    Button("Cook alerts") { showingAlerts = true }
+                    Button("Cook alerts") { detailRoute = "alerts" }
                         .accessibilityIdentifier("live-cook-alerts")
                 }
                 if cook.isActive {
@@ -767,7 +775,7 @@ struct CookDetailView: View {
                     Text("Due \(RecipeReferenceTimeline.time(next.due))").font(.caption).foregroundStyle(PitTechStyle.supporting)
                 }
                 Spacer()
-                Button("Reminders") { showingReminders = true }
+                Button("Reminders") { detailRoute = "reminders" }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)

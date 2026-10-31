@@ -25,6 +25,10 @@ struct MealRemindersView: View {
     @State private var request: NativeReminderRequest?
     @State private var error: String?
     @State private var confirming: String?
+    /// #183: the legacy section's composer + check-in presentation,
+    /// owned here so the sheets attach at the surface root.
+    @State private var legacyComposer = false
+    @State private var legacyCheckIn: LegacyReminder?
     /// PL-01: no blanket default — preselected only to the action that fired.
     @State private var action: String?
     private var rules: [[String: JSONValue]] { store.library.reminderRules.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && (dishId == nil || $0["dishId"]?.stringValue == dishId) } }
@@ -34,7 +38,7 @@ struct MealRemindersView: View {
         List {
             // #183: the legacy cook reminders ride at the top — their
             // own list, composer and check-in, above the unified rules.
-            LegacyRemindersSection(cookId: cookId)
+            LegacyRemindersSection(cookId: cookId, showingComposer: $legacyComposer, checkIn: $legacyCheckIn)
             Section {
                 Text("One vocabulary everywhere: Log it records what you did, Snooze 10 min asks again soon, Dismiss ends a reminder without recording.")
                 if active { Button("Add reminder") { request = NativeReminderRequest(dishId: dishId) }.accessibilityIdentifier("reminder-rule-add") }
@@ -45,6 +49,8 @@ struct MealRemindersView: View {
             if active { suggestions }
             if let error { Text(error).foregroundStyle(.red) }
         }.navigationTitle("Reminders").scrollContentBackground(.hidden).background(PitTechStyle.canvas.ignoresSafeArea()).sheet(item: $request) { NativeReminderEditor(cookId: cookId, request: $0) }
+            .sheet(isPresented: $legacyComposer) { LegacyReminderComposer(cookId: cookId) }
+            .sheet(item: $legacyCheckIn) { reminder in LegacyReminderCheckInView(reminder: reminder) }
             .task { await store.refreshReminderDeliveryHistory() }
             .sheet(isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })) {
                 NavigationStack { Form {

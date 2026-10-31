@@ -48,6 +48,10 @@ final class CookSupportUITests: XCTestCase {
         scrollTo(app, open)
         XCTAssertTrue(open.exists)
         open.tap()
+        // Landmark first: the alerts surface itself (its test-alert
+        // button) — separates "navigation never happened" from "the
+        // row never composed".
+        XCTAssertTrue(app.buttons["alerts-test-alert"].waitForExistence(timeout: 15))
         let acknowledge = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'alert-acknowledge-'")).firstMatch
         XCTAssertTrue(acknowledge.waitForExistence(timeout: 15))
         acknowledge.tap()
@@ -67,7 +71,9 @@ final class CookSupportUITests: XCTestCase {
         let checkIn = app.buttons["legacy-reminder-checkin-ui-legacy-due"]
         XCTAssertTrue(checkIn.waitForExistence(timeout: 15))
         checkIn.tap()
-        XCTAssertTrue(app.staticTexts["How did it go?"].waitForExistence(timeout: 10))
+        // The check-in is a sheet; its title lives in the sheet's
+        // navigation bar.
+        XCTAssertTrue(app.navigationBars["How did it go?"].waitForExistence(timeout: 10))
         let note = app.textFields["reminder-checkin-note"]
         if note.exists { note.tap(); note.typeText("Bark is set") }
         let save = app.buttons["reminder-checkin-save"]
