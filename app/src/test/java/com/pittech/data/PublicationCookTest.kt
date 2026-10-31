@@ -5,7 +5,6 @@ import com.pittech.domain.RecipeSnapshot
 import com.pittech.domain.SharingDocument
 import com.pittech.domain.SharingDraftCodec
 import com.pittech.domain.SharingEntry
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -147,15 +146,16 @@ class PublicationCookTest {
         assertEquals("cook", item.kind)
     }
 
-    @Test fun forkingACookPublicationSavesItsDishesAsRecipes() = runBlocking {
+    @Test fun forkingACookPublicationSavesItsDishesAsRecipes() {
         val payload = PublicationProjection.build(document(), 1, emptyList(), "cook").payload
         val detail = PublicDetail("00000000-0000-4000-8000-0000000000aa", "00000000-0000-4000-8000-0000000000ab", payload, "a PitTech cook", emptyList())
-        val saved = PublicationFork.prepare(detail) { PublicationFork.untweaked() }
-        assertEquals(2, saved.size)
-        assertEquals(listOf("Brisket", "Smoked potatoes"), saved.map { it.snapshot.name })
-        saved.forEach { entry ->
+        val prepared = PublicationFork.prepare(detail, PublicationFork.untweaked(detail), now = 1_700_000_000_000L)
+        assertEquals(listOf("Brisket", "Smoked potatoes"), prepared.saved.map { it.name })
+        val decoded = SharingDraftCodec.decode(prepared.snapshot.companionRecords.single().payload)
+        assertEquals(2, decoded.entries.size)
+        decoded.entries.forEach { entry ->
             assertEquals(detail.id, entry.snapshot.publicSource!!.itemId)
-            assertTrue("each forked dish keeps its measured story pinned", entry.story != null)
+            assertTrue("each forked dish keeps its measured story pinned", JSONObject(entry.storyJson).has("publicStory"))
         }
     }
 }
