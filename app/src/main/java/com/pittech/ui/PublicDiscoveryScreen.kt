@@ -67,7 +67,7 @@ import org.json.JSONObject
                 // numbers — stars and forks as the book draws them,
                 // plus its category. Counts appear only when the
                 // response carried them (§4.5's slot rule).
-                Text(listOfNotNull(detail.likes?.let { "★ $it" },detail.forks?.let { "⑂ $it" },com.pittech.domain.FoodCategories.labelFor(com.pittech.domain.FoodCategories.normalizedId(detail.payload.optString("category")))).joinToString(" · "),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+                Text(listOfNotNull(if(detail.payload.optString("kind")=="cook")"Cook" else null,detail.likes?.let { "★ $it" },detail.forks?.let { "⑂ $it" },com.pittech.domain.FoodCategories.labelFor(com.pittech.domain.FoodCategories.normalizedId(detail.payload.optString("category")))).joinToString(" · "),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
                 detail.profileUrl?.let { url->TextButton(onClick={manager.openProfile(com.pittech.data.PublicLink.destination(url).substringAfter(':'))}) { Text("View public cookbook") } }
                 if(account?.enabled==true && publicationWriter!=null)PublicStarActions(detail.id,account,publicationWriter)
                 if(controls!=null && account!=null)CommunityActions(detail,controls,account,manager)
@@ -89,10 +89,17 @@ import org.json.JSONObject
                 OutlinedButton(onClick={ manager.planThis() },enabled=!state.forking && !state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-plan-this")) { Text("Plan this") }
                 if(state.forking) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text("Saving your version…") } }
                 if(state.preparing) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.DOWNLOADING_COOK_PACK) }; TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
+                // Publishable Cooks (issue #250): a cook publication leads
+                // with the session its dishes shared and their one timeline;
+                // the per-dish stories stay in the dish cards below.
+                if(detail.payload.optString("kind")=="cook") {
+                    detail.payload.optJSONObject("session")?.let { session -> PublicSessionView(session,temperatureUnit) }
+                    PublicSessionTimeline(detail)
+                }
                 detail.recipes.forEach { recipe ->
                     TurnInCard(Modifier.fillMaxWidth()) {
                         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                            Text("Recipe",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+                            Text(if(detail.payload.optString("kind")=="cook")"Dish" else "Recipe",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
                             Text(recipe.getString("title"),style=PitTechTextStyles.bannerCard)
                             recipe.optJSONObject("source")?.let { source->
                                 if(source.optBoolean("removed"))Text("Based on a removed recipe",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
@@ -192,7 +199,7 @@ private fun JSONObject.rows(key: String)=getJSONArray(key).let { array->(0 until
             Text(item.credit,style=MaterialTheme.typography.bodyMedium)
             val factsLine=listOfNotNull(facts?.timeLabel,facts?.tempLabel).joinToString(" · ")
             if(factsLine.isNotEmpty())Text(factsLine,style=PitTechTextStyles.monoMeta,modifier=Modifier.testTag("discover-card-facts-${item.id}"))
-            Text("${item.categoryLabel} · ★ ${item.likes} · ⑂ ${item.forks}",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+            Text("${if(item.kind=="cook")"Cook · " else ""}${item.categoryLabel} · ★ ${item.likes} · ⑂ ${item.forks}",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
         }
     }
 }

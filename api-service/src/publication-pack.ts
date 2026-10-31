@@ -11,9 +11,16 @@ export type Source = { itemId: string; revisionId: string; removed: boolean; dis
 export type Asset = { id: string; path: string; mimeType: string; sha256: string; caption: string };
 export type PublicationRecipe = { id: string; revisionId: string; title: string; description: string; foodType: string; cut: string | null;
   weightGrams: number | null; method: string | null; ingredients: {name:string;amount:string}[]; instructions: {id:string;title:string;details:string;method?:string|null;action:string|null;suggestedOffsetMillis:number|null}[]; tags: string[];
-  story: {attemptId:string;foodOnOffsetMillis:number|null;foodOffOffsetMillis:number|null;channels:{id:string;role:string;label:string}[];measurements:{channelId:string;role:string;offsetMillis:number;valueCelsius:number;quality:string}[];milestones:{id:string;offsetMillis:number;action:string|null;text:string}[];verdict:{rating:number|null;cookAgain:boolean|null;notes:string};gaps:{channelId:string;fromMillis:number;toMillis:number}[]} | null;
+  story: {attemptId:string;foodOnOffsetMillis:number|null;foodOffOffsetMillis:number|null;channels:{id:string;role:string;label:string}[];measurements:{channelId:string;role:string;offsetMillis:number;valueCelsius:number;quality:string}[];milestones:{id:string;offsetMillis:number;action:string|null;text:string}[];verdict:{rating:number|null;cookAgain:boolean|null;notes:string};gaps:{channelId:string;fromMillis:number;toMillis:number}[];anchorOffsetMillis?:number|null;inputs?:PublicationStoryInputs|null} | null;
   assets: Asset[]; source: Source | null };
-export type PublicationPayload = { contractVersion: 1; kind: 'recipe'|'collection'|'attempt'; identityMode: 'named'|'anonymous';
+export type PublicationStoryInputs = { wrapMaterial: 'none'|'foil'|'butcher_paper'|null; rub: string|null; spritz: boolean|null; spritzMedium: string|null };
+/** The measured session behind a kind=cook publication (issue #250). Times are offsets from the session start. */
+export type PublicationSession = { smokerName: string|null; fuelType: string|null; woodOrPelletBlend: string|null;
+  setpoint: {value:number;unit:'°C'|'°F'}|null; outdoorTemperatureValue: number|null; outdoorTemperatureUnit: string|null;
+  weatherNotes: string; windNotes: string; notes: string; serveAtOffsetMillis: number|null; durationMillis: number|null };
+export type PublicationPayload = { contractVersion: 1; kind: 'recipe'|'collection'|'attempt'|'cook'; identityMode: 'named'|'anonymous';
+  /** The shared session object; present (non-null) exactly when kind is 'cook'. */
+  session?: PublicationSession | null;
   /** Taxonomy id from contracts/fixtures/food-categories-v1.json. Optional so pre-taxonomy payloads stay valid; those count as Other on read paths. */
   category?: string; title: string;
   recipes: PublicationRecipe[]; source: Source | null; measuredAttemptId: string | null; heroAssetId: string | null };
@@ -35,6 +42,20 @@ export async function canonicalPublication(bytes: Buffer) {
   if(files.size !== assets.length+1 || (payload.heroAssetId !== null && !assets.some(a=>a.id===payload.heroAssetId))) throw invalid();
   const attempts = new Set<string>();
   const offset=(v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=-604800000&&v<=2592000000;
+  // Publishable Cooks (issue #250): kind=cook carries the measured session the
+  // dishes shared. The session exists exactly for cook publications, a cook
+  // never names a single measured attempt, and every published dish carries
+  // its story — a dish without its measured record is excluded from the cook,
+  // never published story-less under it.
+  const session = payload.session ?? null;
+  if(payload.kind === 'cook') {
+    if(!session || payload.measuredAttemptId !== null || payload.recipes.some(r=>!r.story)) throw invalid();
+  } else if(session !== null) throw invalid();
+  if(session) {
+    if((session.smokerName?.length??0)>160 || (session.fuelType?.length??0)>160 || (session.woodOrPelletBlend?.length??0)>160 || (session.outdoorTemperatureUnit?.length??0)>16 || session.weatherNotes.length>2000 || session.windNotes.length>2000 || session.notes.length>2000) throw invalid();
+    if(session.serveAtOffsetMillis !== null && !offset(session.serveAtOffsetMillis)) throw invalid();
+    if(session.durationMillis !== null && (!Number.isSafeInteger(session.durationMillis) || session.durationMillis < 0 || session.durationMillis > 2592000000)) throw invalid();
+  }
   for(const recipe of payload.recipes) {
     if(recipe.title.length>160||recipe.description.length>2000||recipe.foodType.length>160||(recipe.cut?.length??0)>160||(recipe.method?.length??0)>160||recipe.tags.some(t=>t.length>40)||recipe.ingredients.some(i=>i.name.length>160||i.amount.length>2000)||recipe.instructions.some(i=>i.title.length>160||i.details.length>2000||(i.action?.length??0)>80||(i.method?.length??0)>160)||recipe.assets.some(a=>a.caption.length>2000))throw invalid();
     if(recipe.ingredients.some(i=>!i.name.trim())||recipe.instructions.some(i=>!i.title.trim()))throw invalid();
@@ -45,6 +66,11 @@ export async function canonicalPublication(bytes: Buffer) {
     if(story.channels.some(c=>c.id.length>80||c.label.length>160)||story.milestones.some(m=>m.text.length>2000||(m.action?.length??0)>80)||story.verdict.notes.length>2000)throw invalid();
     if([story.foodOnOffsetMillis,story.foodOffOffsetMillis].some(v=>v!==null&&!offset(v)) || story.foodOnOffsetMillis!==null&&story.foodOffOffsetMillis!==null&&story.foodOffOffsetMillis<story.foodOnOffsetMillis || story.milestones.some(m=>!offset(m.offsetMillis)) || story.gaps.some(g=>!offset(g.fromMillis)||!offset(g.toMillis)||g.toMillis<g.fromMillis||!story.channels.some(c=>c.id===g.channelId)))throw invalid();
     unique(story.channels.map(c=>c.id)); unique(story.milestones.map(m=>m.id));
+    // Session-clock placement and the lifted cook inputs are shape-checked
+    // here; community aggregation validates but never reads them (issue #250
+    // item 5: v1 metrics unchanged, inputs reserved as future priors).
+    if(story.anchorOffsetMillis !== undefined && story.anchorOffsetMillis !== null && !offset(story.anchorOffsetMillis)) throw invalid();
+    if(story.inputs !== undefined && story.inputs !== null && (![null,'none','foil','butcher_paper'].includes(story.inputs.wrapMaterial) || (story.inputs.rub?.length??0)>160 || (story.inputs.spritzMedium?.length??0)>160)) throw invalid();
     if(attempts.has(story.attemptId)) throw invalid(); attempts.add(story.attemptId);
     if(story.measurements.some(m=>!story.channels.some(c=>c.id===m.channelId&&c.role===m.role))) throw invalid();
   }

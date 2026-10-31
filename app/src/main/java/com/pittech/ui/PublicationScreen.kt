@@ -39,6 +39,9 @@ import org.json.JSONObject
     var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }; var signingIn by remember { mutableStateOf(false) }
     var lastSignedInUser by remember { mutableStateOf<String?>(null) }
     var postedCard by remember { mutableStateOf(false) }
+    // Publishable Cooks (issue #250): "Whole cook" is offered only for drafts
+    // that carry a recorded session (meal drafts and owned cook drafts).
+    var hasSession by remember { mutableStateOf(false) }
     fun invalidate() { prepared=null; reviewed=false; previewUser=null; updateSummary=null }
     suspend fun refreshPending() {
         pending=writer.pending(); linked=writer.binding(draft)
@@ -63,7 +66,7 @@ import org.json.JSONObject
         } else if(!state.signedIn) {
             published = null
         }
-        try { val document=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload) }; identity=document.identityMode; category=document.categoryId; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Nothing changed on this device.") }
+        try { val document=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload) }; identity=document.identityMode; category=document.categoryId; hasSession=document.sessionJson!=null; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Nothing changed on this device.") }
     }
     // Slice 8 (PL-15 / DD-10): completing sign-in returns to this sheet on
     // its own — the account dialog closes itself instead of waiting for a
@@ -73,7 +76,7 @@ import org.json.JSONObject
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth()) { Text("Publish preview",style=PitTechTextStyles.bannerTitle,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                Text("Publish a selected recipe, collection or actual cook. Anyone can read and save a public copy.",color=pitTechTokens().inkMuted)
+                Text("Publish a selected recipe, collection, actual cook or whole cook. Anyone can read and save a public copy.",color=pitTechTokens().inkMuted)
                 if(!state.signedIn) {
                     Text("Sign in to publish. This sharing draft stays on this device, and sign-in won't publish it.")
                     Button(onClick={ signingIn=true },modifier=Modifier.testTag("publication-sign-in")) { Text("Sign in to continue") }
@@ -106,7 +109,7 @@ import org.json.JSONObject
                     OutlinedButton(onClick={ onClose(); viewModel.requestCookbookOpen() },enabled=!busy,modifier=Modifier.testTag("publication-open-cookbook")) { Text("Open public cookbook") }
                     Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
                 } else {
-                    val kindLabels=mapOf("recipe" to "Recipe","collection" to "Meal collection","attempt" to "Actual recorded cook")
+                    val kindLabels=mapOf("recipe" to "Recipe","collection" to "Meal collection","attempt" to "Actual recorded cook") + if(hasSession || kind=="cook") mapOf("cook" to "Whole cook") else emptyMap()
                     SimpleDropdownField("Publication",kindLabels.getValue(kind),kindLabels.values.toList(),{ label -> kind=kindLabels.entries.first { it.value==label }.key; invalidate() },enabled=!busy)
                     SimpleDropdownField("Public credit",if(identity=="anonymous")"Anonymous · a PitTech cook" else "My display name",listOf("Anonymous · a PitTech cook","My display name"),{ identity=if(it=="My display name")"named" else "anonymous"; invalidate() },enabled=!busy)
                     Text(if(identity=="anonymous")"Your profile name and public cookbook link won't appear on this publication." else "Your current display name appears publicly. Your public cookbook link appears only while your public cookbook is enabled.",color=pitTechTokens().inkMuted)
@@ -200,9 +203,10 @@ import org.json.JSONObject
     val payload=prepared.payload; val recipes=remember(prepared) { payload.rows("recipes") }
     Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text(payload.getString("title"),style=PitTechTextStyles.bannerTitle,modifier=Modifier.testTag("publication-preview-title"))
-        Text(when(payload.getString("kind")) { "attempt" -> "Actual recorded cook"; "collection" -> "Meal collection"; else -> "Recipe" },style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+        Text(when(payload.getString("kind")) { "attempt" -> "Actual recorded cook"; "collection" -> "Meal collection"; "cook" -> "Whole cook"; else -> "Recipe" },style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
         Text("${recipes.size} selected recipes · ${prepared.photos.size} selected photos",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
         Text("Public credit: "+if(payload.getString("identityMode")=="named")"your display name" else "a PitTech cook")
+        payload.optJSONObject("session")?.let { session -> PublicSessionView(session,temperatureUnit) }
         recipes.forEach { recipe ->
             Text(recipe.getString("title"),style=PitTechTextStyles.bannerCard); Text(recipe.getString("description"))
             Text(listOf("foodType","cut","method").mapNotNull { if(recipe.isNull(it))null else recipe.optString(it).takeIf(String::isNotBlank) }.joinToString(" · "),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)

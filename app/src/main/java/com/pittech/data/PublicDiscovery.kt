@@ -33,7 +33,7 @@ internal data class PublicItem(val id: String,val revisionId: String,val title: 
         // The hero asset id (Slice 5, element 4.1) is likewise tolerant:
         // a cached page without one simply renders its card photo-less.
         val item=PublicItem(o.getString("id"),o.getString("revisionId"),o.getString("title"),o.getString("kind"),o.getJSONObject("credit").getString("displayName"),o.getInt("likes"),o.getInt("forks"),FoodCategories.normalizedId(o.optString("category")),o.optString("heroAssetId").takeIf { publicUUID(it) })
-        require(publicUUID(item.id) && publicUUID(item.revisionId) && item.title.length in 1..160 && item.credit.length <= 160 && item.kind in setOf("recipe","collection","attempt") && item.likes in 0..1_000_000_000 && item.forks in 0..1_000_000_000);return item
+        require(publicUUID(item.id) && publicUUID(item.revisionId) && item.title.length in 1..160 && item.credit.length <= 160 && item.kind in setOf("recipe","collection","attempt","cook") && item.likes in 0..1_000_000_000 && item.forks in 0..1_000_000_000);return item
     } }
 }
 /** What a Discover card can honestly show about a publication before
@@ -46,7 +46,13 @@ internal fun publicCardFacts(detail: PublicDetail,temperatureUnit: String): Publ
     val heroAssetId=detail.payload.optString("heroAssetId")
     val recipe=detail.recipes.firstOrNull { r->r.optJSONArray("assets")?.let { a->(0 until a.length()).any { a.getJSONObject(it).optString("id")==heroAssetId } }==true } ?: detail.recipes.firstOrNull()
     val story=recipe?.optJSONObject("story")
-    val timeLabel=if(story!=null && !story.isNull("foodOnOffsetMillis") && !story.isNull("foodOffOffsetMillis")) {
+    // A cook card's time is the whole session's length when the publication
+    // carries one (issue #250); the hero dish's own span is the fallback.
+    val sessionDuration=detail.payload.optJSONObject("session")?.takeIf { !it.isNull("durationMillis") }?.getLong("durationMillis")
+    val timeLabel=if(sessionDuration!=null && sessionDuration>0) {
+        val totalMinutes=sessionDuration/60_000
+        if(totalMinutes>0) { val h=totalMinutes/60;val m=totalMinutes%60;when { h>0 && m>0->"${h}H ${m}M";h>0->"${h}H";else->"${m}M" } } else null
+    } else if(story!=null && !story.isNull("foodOnOffsetMillis") && !story.isNull("foodOffOffsetMillis")) {
         val totalMinutes=(story.getLong("foodOffOffsetMillis")-story.getLong("foodOnOffsetMillis"))/60_000
         if(totalMinutes>0) { val h=totalMinutes/60;val m=totalMinutes%60;when { h>0 && m>0->"${h}H ${m}M";h>0->"${h}H";else->"${m}M" } } else null
     } else null
