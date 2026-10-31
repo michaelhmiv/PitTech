@@ -111,7 +111,8 @@ enum LiveGuidance {
             events: archive.events.filter { keptCookIds.contains($0.cookId) },
             readings: archive.readings.filter { keptCookIds.contains($0.cookId) },
             results: archive.results.filter { keptCookIds.contains($0.cookId) },
-            lifecycles: archive.lifecycles.filter { keptCookIds.contains($0.cookId) })
+            lifecycles: archive.lifecycles.filter { keptCookIds.contains($0.cookId) },
+            targets: archive.targets.filter { keptCookIds.contains($0.cookId) })
         return CookPaceEngine.history(archives: [filtered], targetFByDish: targets)
     }
 

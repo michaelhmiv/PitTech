@@ -22,6 +22,14 @@ struct CookTemperatureChart: View {
     var presetSpanMinutes: Double? = nil
     var presetStartMinutes: Double? = nil
     var presetFollowLatest: Bool = false
+    // Flowing Slice 6 (Spread 05, 5.1): per-cook display offsets for the
+    // compare alignment stepper, mirroring Android's `cookOffsetMillis` —
+    // added to a cook's elapsed axis only while comparing; recorded times
+    // are never altered. Default empty everywhere else. The compare
+    // view's own steppers drive `compareStepOffsets`; an explicitly
+    // passed offset for a cook wins over its stepped one.
+    var cookOffsetMillis: [String: Double] = [:]
+    @State private var compareStepOffsets: [String: Double] = [:]
     @State private var clockMode = false
     @State private var hidden: Set<String> = []
     @State private var window = 240.0
@@ -79,7 +87,24 @@ struct CookTemperatureChart: View {
     private func x(_ date: Date, reference: Bool = false) -> Double {
         if clockMode && !comparing { return date.timeIntervalSince1970 / 60 }
         let anchor = comparing ? (reference ? comparisonAnchor! : currentAnchor!) : defaultAnchor
-        return date.timeIntervalSince(anchor) / 60
+        let elapsed = date.timeIntervalSince(anchor) / 60
+        guard comparing else { return elapsed }
+        // 5.1: the alignment stepper nudges a whole cook's curve on the
+        // elapsed axis — display-only, like Android's chart.
+        let offsetCook = reference ? comparisonCook : cookId
+        return elapsed + compareOffsetMillis(for: offsetCook) / 60_000
+    }
+    private func compareOffsetMillis(for id: String) -> Double {
+        cookOffsetMillis[id] ?? compareStepOffsets[id] ?? 0
+    }
+    private func stepCompareOffset(_ id: String, delta: Double) {
+        compareStepOffsets[id] = min(7_200_000, max(-7_200_000, compareOffsetMillis(for: id) + delta))
+    }
+    private var compareOffsetRows: [(cookId: String, title: String)] {
+        [
+            (cookId, cook?.title ?? "This cook"),
+            (comparisonCook, store.library.cooks.first { $0.id == comparisonCook }?.title ?? "Reference cook"),
+        ]
     }
     private var guideRefreshKey: [String] {
         store.library.companionRecords.compactMap { value in
@@ -303,6 +328,22 @@ struct CookTemperatureChart: View {
                 else {
                     Text("Current and reference · minutes since \(CookStore.actionLabel(alignment)) · separate stable channels").font(.caption)
                     ForEach(InsightsCalculations.comparisonContext(currentDish: dishSummary(cookId, dishId: currentDish), sourceDish: dishSummary(comparisonCook, dishId: sourceDish), current: readingSummary(samples), source: readingSummary(sourceSamples)), id: \.self) { line in Text(line).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
+                    // Flowing Slice 6 (5.1): the offset stepper — nudge a
+                    // cook whose food-on mark sits off the other.
+                    // Display-only; recorded times never change.
+                    TurnInMetaLabel("Align at food-on · nudge a curve")
+                    ForEach(compareOffsetRows, id: \.cookId) { row in
+                        HStack {
+                            Text(row.title).font(PitTechFont.body).frame(maxWidth: .infinity, alignment: .leading)
+                            Button("−5m") { stepCompareOffset(row.cookId, delta: -300_000) }
+                                .accessibilityIdentifier("compare-offset-minus-\(row.cookId)")
+                            Text(CompareFacts.offsetLabel(compareOffsetMillis(for: row.cookId)))
+                                .font(PitTechFont.monoMeta)
+                                .accessibilityIdentifier("compare-offset-value-\(row.cookId)")
+                            Button("+5m") { stepCompareOffset(row.cookId, delta: 300_000) }
+                                .accessibilityIdentifier("compare-offset-plus-\(row.cookId)")
+                        }
+                    }
                     if !currentDish.isEmpty && !sourceDish.isEmpty { Button("Use this reference") {
                         do { try store.saveReference(cookId, reference: NativeCookReference(dishId: currentDish, sourceCookId: comparisonCook, sourceDishId: sourceDish, currentProbe: samples.first { $0.seriesId == currentChannel }?.probeName ?? "", sourceProbe: sourceSamples.first { $0.seriesId == comparisonChannel }?.probeName ?? "", anchor: alignment, currentSeriesId: currentChannel, sourceSeriesId: comparisonChannel)); referenceMessage = "Reference saved." }
                         catch { referenceMessage = error.localizedDescription }

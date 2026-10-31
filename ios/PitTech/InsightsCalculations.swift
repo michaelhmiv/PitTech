@@ -53,6 +53,19 @@ struct InsightLifecycleInput: Decodable {
     let timingMode: String
 }
 
+/// One recorded target row, carried the way Android's
+/// `InsightsSnapshot.targets` now carries it (Flowing Slice 6): compare
+/// runs the §4.1 pace engine for an in-progress cook from its own
+/// recorded `personal_finish` target.
+struct InsightTargetInput: Decodable, Equatable {
+    let id: String
+    let cookId: String
+    let dishId: String?
+    let targetType: String
+    let value: Double
+    let unit: String
+}
+
 struct InsightArchiveInput: Decodable {
     let cooks: [InsightCookInput]
     let dishes: [InsightDishInput]
@@ -60,6 +73,29 @@ struct InsightArchiveInput: Decodable {
     let readings: [InsightReadingInput]
     let results: [InsightResultInput]
     let lifecycles: [InsightLifecycleInput]
+    /// Recorded targets (Slice 6); archives decoded from older fixtures
+    /// simply carry none.
+    let targets: [InsightTargetInput] = []
+}
+
+extension InsightArchiveInput {
+    /// Hand-written so `targets` stays optional on the wire: golden
+    /// fixtures written before Slice 6 have no targets key and must keep
+    /// decoding to an empty list rather than failing.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cooks = try container.decode([InsightCookInput].self, forKey: .cooks)
+        dishes = try container.decode([InsightDishInput].self, forKey: .dishes)
+        events = try container.decode([InsightEventInput].self, forKey: .events)
+        readings = try container.decode([InsightReadingInput].self, forKey: .readings)
+        results = try container.decode([InsightResultInput].self, forKey: .results)
+        lifecycles = try container.decode([InsightLifecycleInput].self, forKey: .lifecycles)
+        targets = try container.decodeIfPresent([InsightTargetInput].self, forKey: .targets) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case cooks, dishes, events, readings, results, lifecycles, targets
+    }
 }
 
 struct InsightChannelMetrics: Decodable, Equatable {
@@ -269,7 +305,12 @@ extension CookStore {
             return InsightResultInput(id: id, cookId: cookId, dishId: o["dishId"]?.stringValue, resultType: type, numericValue: o["numericValue"]?.numberValue, textValue: o["textValue"]?.stringValue, recordedAtUtcMillis: recorded)
         }
         let lifecycles = library.cooks.map { InsightLifecycleInput(cookId: $0.id, timingMode: timingMode($0.id)) }
-        return InsightArchiveInput(cooks: cooks, dishes: dishes, events: events, readings: readings, results: results, lifecycles: lifecycles)
+        let targets = library.targets.compactMap { row -> InsightTargetInput? in
+            guard let o = row.objectValue, let id = o["id"]?.stringValue, let cookId = o["cookId"]?.stringValue,
+                  let type = o["targetType"]?.stringValue, let value = o["value"]?.numberValue, let unit = o["unit"]?.stringValue else { return nil }
+            return InsightTargetInput(id: id, cookId: cookId, dishId: o["dishId"]?.stringValue, targetType: type, value: value, unit: unit)
+        }
+        return InsightArchiveInput(cooks: cooks, dishes: dishes, events: events, readings: readings, results: results, lifecycles: lifecycles, targets: targets)
     }
 }
 
