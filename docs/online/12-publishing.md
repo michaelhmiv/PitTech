@@ -32,6 +32,33 @@ have unknown duration and are represented as markers, without an invented end.
 Native tests export actual publication archives for subsequent server validation;
 those new native results are pending in Actions.
 
+Publishable Cooks (issue #250) adds a fourth publication kind, `cook`: the
+whole measured session as one publication. A cook payload carries a top-level
+`session` object (smoker, setpoint, fuel, wood, outdoor temperature and weather
+notes, session notes, the starting serve plan's serve time and the session
+length — all as session-relative offsets, never absolute dates) and requires
+every published recipe to carry its story; a dish without its measured record
+is excluded from the cook rather than published story-less. Each story gains
+two optional fields, written only for this kind: `anchorOffsetMillis`, the
+dish's story origin placed on the session clock (the shared timeline is a
+join of anchor + milestone offsets, deduplicated by milestone id because
+session-wide events appear in every dish's story), and `inputs`, the dish's
+recorded wrap/rub/spritz lifted from its results rows. The session object
+exists exactly when kind is `cook`, a cook never sets `measuredAttemptId`,
+and both rules are enforced by the server validator alongside the schema.
+Forking a cook publication follows Option A: its dishes save into the
+forker's library as recipes through the same fork path as any publication,
+each with its story pinned; the session and its shared timeline stay
+view-only on the publication and never transfer as a plan or session
+(forking into Plan a Cook is a documented v2 follow-up). Community
+aggregation is unchanged: eligibility ignores kind, cook stories dedupe by
+attemptId + dishId like any other, and the projection validates
+`anchorOffsetMillis`/`inputs` for shape but extracts nothing from them in
+v1 — the inputs are reserved as documented future priors. Owner updates of
+a cook publication rebuild the identical session from the published payload
+(rebased onto the writers' internal origin), so recorded session facts stay
+frozen through revisions exactly like stories.
+
 Both clients now have device-only publication operation stores and streamed authenticated
 write clients. A body and its operation UUID are persisted before transmission, bound
 to the initiating account, checked for corruption, and reused after an ambiguous

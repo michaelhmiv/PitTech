@@ -34,7 +34,7 @@ internal class AccountPublicationSession(private val account: AccountManager): P
 }
 internal fun publicationUuid(value: String) = value.matches(Regex("[a-fA-F0-9]{8}(-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}"))
 internal data class PublicationReceipt(val id: String, val revisionId: String, val revision: Int, val url: String, val kind: String? = null, val status: String? = null) {
-    fun validate() { require(publicationUuid(id) && publicationUuid(revisionId) && revision > 0 && url == "${OnlineConfiguration.current.publicOrigin}/c/$id" && (kind==null || kind in setOf("recipe","collection","attempt")) && (status==null || status in setOf("active","pending_review"))) }
+    fun validate() { require(publicationUuid(id) && publicationUuid(revisionId) && revision > 0 && url == "${OnlineConfiguration.current.publicOrigin}/c/$id" && (kind==null || kind in setOf("recipe","collection","attempt","cook")) && (status==null || status in setOf("active","pending_review"))) }
     fun json() = JSONObject().put("id",id).put("revisionId",revisionId).put("revision",revision).put("url",url).put("kind",kind ?: JSONObject.NULL).put("status",status ?: JSONObject.NULL)
     companion object { fun parse(o: JSONObject) = PublicationReceipt(o.getString("id"),o.getString("revisionId"),o.getInt("revision"),o.getString("url"),if(o.isNull("kind"))null else o.getString("kind"),if(o.isNull("status"))null else o.getString("status")).also { it.validate() } }
 }
@@ -45,7 +45,7 @@ internal data class PublicationOperation(val id: String, val userId: String, val
         val recipe=item && parts.size==4; val like=item && parts.size==5 && parts[4]=="like"
         val archive=method=="POST" && path=="/v1/recipes" || method=="PUT" && recipe
         require(termsVersion==null || archive && termsVersion.matches(Regex("[a-z0-9-]{1,64}")))
-        require(publicationKind==null || archive && publicationKind in setOf("recipe","collection","attempt"))
+        require(publicationKind==null || archive && publicationKind in setOf("recipe","collection","attempt","cook"))
         require(archive && contentType=="application/zip" && bytes>0 && (method!="PUT" || expectedRevision!=null) || !archive && draftId==null && contentType=="application/json" && bytes<=8192 && (path=="/v1/me/profile" && method=="PUT" || like && method in setOf("POST","DELETE") || recipe && method=="DELETE" && expectedRevision!=null))
     }
     fun json() = JSONObject().put("id",id).put("userId",userId).put("method",method).put("path",path).put("contentType",contentType).put("sha256",sha256).put("bytes",bytes).put("expectedRevision",expectedRevision ?: JSONObject.NULL).put("draftId",draftId ?: JSONObject.NULL).put("rejected",rejected).put("publicationKind",publicationKind ?: JSONObject.NULL).put("termsVersion",termsVersion ?: JSONObject.NULL)
