@@ -48,11 +48,13 @@ final class CookSupportUITests: XCTestCase {
         scrollTo(app, open)
         XCTAssertTrue(open.exists)
         open.tap()
-        // Landmark first: the alerts surface itself (its test-alert
-        // button) — separates "navigation never happened" from "the
-        // row never composed".
+        // Landmarks, in order: the alerts surface itself, then the
+        // rule's row, then its Acknowledge action — each wait names
+        // the step that broke if it breaks.
         XCTAssertTrue(app.buttons["alerts-test-alert"].waitForExistence(timeout: 15))
-        let acknowledge = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'alert-acknowledge-'")).firstMatch
+        XCTAssertTrue(app.staticTexts["Brisket target"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Needs attention"].waitForExistence(timeout: 10))
+        let acknowledge = app.buttons["Acknowledge"]
         XCTAssertTrue(acknowledge.waitForExistence(timeout: 15))
         acknowledge.tap()
         XCTAssertTrue(app.staticTexts["Acknowledged · condition has not recovered"].waitForExistence(timeout: 10))

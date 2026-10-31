@@ -360,15 +360,12 @@ struct CookDetailView: View {
                         store.notificationLegacyReminderId = nil
                     }
                 }
-                // #183: while Live is open, the monitors re-evaluate on
-                // a 15-second cadence (Android's guidance card ticker):
-                // save() runs the alert/guidance reconciliations.
-                .task {
-                    while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(15))
-                        if !Task.isCancelled { store.save() }
-                    }
-                }
+                // #183: alert/guidance evaluation rides the save()
+                // funnel — every mutation re-evaluates, and the
+                // reconciliations schedule the time-based wake-ups
+                // (due steps, silence windows) as notifications at
+                // save time, so no periodic full-save ticker is
+                // needed on this screen.
                 .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
                 .sheet(item: $chartContext) { context in LiveChartView(cookId: cookId, leadDishId: context.leadDishId, etaLatestUtcMillis: context.etaLatestUtcMillis) }
                 .sheet(isPresented: $showingResults) { CookResultsSheet(cookId: cookId) }

@@ -77,6 +77,30 @@ final class CookAlertsTests: XCTestCase {
         XCTAssertEqual(summary, "Alerts · 1 needs attention · Acknowledged: Brisket target")
     }
 
+    /// The fixture's shape, at store level: a target alert made
+    /// active by a logged temperature stays active across later saves
+    /// (the reconciliations re-evaluate on every save; a fresh reading
+    /// inside the recovery band must not clear it).
+    @MainActor func testActivatedAlertSurvivesLaterSaves() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder)
+        store.startCook(title: "Fixture cook", firstDish: "Brisket")
+        let cookId = store.library.cooks[0].id
+        let dishId = store.dishRecords(cookId)[0].id
+        let now = Int64(Date.now.timeIntervalSince1970 * 1000)
+        try store.saveNote(CookNoteDraft(cookId: cookId, dishId: dishId, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: Double(now - 3_600_000)))
+        try store.saveCookAlert(cookId: cookId, title: "Brisket target", rule: CookAlertRule(dishId: dishId, targetF: 165))
+        try store.saveNote(CookNoteDraft(cookId: cookId, dishId: dishId, title: "Checked temp", occurredAt: Double(now),
+            temperatures: [NoteTemperatureDraft(probeName: "Probe 1", valueText: "170", unit: "°F", measuredAt: Double(now), dishId: dishId)]))
+        XCTAssertEqual(store.cookAlerts(cookId: cookId).first?.state.active, true)
+        // Later saves (any mutation) re-evaluate and keep it active.
+        _ = try store.createCookReminder(cookId: cookId, title: "Rotate", dueAtUtcMillis: now + 3_600_000)
+        store.save()
+        XCTAssertEqual(store.cookAlerts(cookId: cookId).first?.state.active, true)
+        XCTAssertEqual(store.alertStripSummary(cookId: cookId), "Alerts · 1 needs attention")
+    }
+
     @MainActor func testStoreSaveChangeAndMissingDefault() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
