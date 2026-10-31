@@ -400,6 +400,9 @@ data class InsightsSnapshot(
     val results: List<CookResultEntity>,
     val connectionGaps: List<TimelineEventEntity> = emptyList(),
     val ingredients: List<IngredientEntity> = emptyList(),
+    /** Every recorded target, so compare (Flowing Spread 05) can run the
+     * §4.1 pace engine for an in-progress cook from its own finish target. */
+    val targets: List<TargetEntity> = emptyList(),
 )
 
 @Dao
@@ -678,6 +681,9 @@ interface CookDao {
 
     @Query("SELECT * FROM cook_results")
     fun observeAllResults(): Flow<List<CookResultEntity>>
+
+    @Query("SELECT * FROM targets")
+    fun observeAllTargets(): Flow<List<TargetEntity>>
 
     @Query("SELECT * FROM ingredients WHERE cookId = :cookId ORDER BY createdAtUtcMillis ASC")
     suspend fun getIngredientsForCook(cookId: String): List<IngredientEntity>

@@ -31,6 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.pittech.data.CookStatus
 import com.pittech.data.CookWithDishes
 import com.pittech.data.InsightsSnapshot
+import com.pittech.data.insightArchive
 import com.pittech.data.notePlanEvents
 import java.text.DateFormat
 import java.util.Date
@@ -56,8 +58,9 @@ import java.util.Date
  * grid are composed from the A2 frames (`history-populated`, `stats`,
  * `compare-select`, `compare-view`); every control, filter, and test tag
  * keeps its existing home and behavior — search, favorites / rated filters,
- * the smoker choice, compare selection (2–4 completed cooks), the factual
- * difference lines, and the aligned chart are the app's own.
+ * the smoker choice, compare selection (2–4 cooks, in-progress included
+ * since Slice 6), the factual difference lines, and the aligned chart are
+ * the app's own.
  */
 @Composable
 internal fun InsightsScreen(
@@ -73,6 +76,9 @@ internal fun InsightsScreen(
     var smoker by remember { mutableStateOf("All smokers") }
     var comparing by remember { mutableStateOf(false) }
     val selectedIds = remember { mutableStateListOf<String>() }
+    // Flowing Slice 6 (5.1): the compare alignment stepper's per-cook
+    // display offsets, in elapsed milliseconds. Display-only state.
+    val compareOffsets = remember { mutableStateMapOf<String, Long>() }
     val completed = data.cooks.filter { it.cook.status == CookStatus.COMPLETED }
     val durationValues = completed.mapNotNull { cook ->
         cook.cook.endedAtUtcMillis?.let { cookHeatingMinutes(cook) }
@@ -90,7 +96,9 @@ internal fun InsightsScreen(
             (!highlyRated || data.results.any { it.cookId == item.cook.id && it.resultType == "overall_rating" && (it.numericValue ?: 0.0) >= 4.0 }) &&
             query.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.all { searchable.contains(it, true) }
     }
-    val selected = completed.filter { it.cook.id in selectedIds }
+    // Slice 6 (5.3): an in-progress cook can be compared too — its total
+    // is a §4.1 projection and wears the PROJECTED tag, never fact.
+    val selected = data.cooks.filter { it.cook.id in selectedIds }
     val tokens = pitTechTokens()
 
     Column(
@@ -145,25 +153,73 @@ internal fun InsightsScreen(
                     options = listOf("All smokers") + data.cooks.mapNotNull { it.cook.smokerName }.distinct(),
                     onSelect = { smoker = it },
                 )
-                if (completed.size >= 2) {
+                if (data.cooks.size >= 2) {
                     FilterChip(comparing, { comparing = !comparing; selectedIds.clear() }, label = { Text(if (comparing) "Done" else "Select cooks") })
                 }
             }
-            if (completed.size >= 2) {
-                Text("Compare completed cooks", style = PitTechTextStyles.bodyEmphasis)
+            if (data.cooks.size >= 2) {
+                Text("Compare cooks", style = PitTechTextStyles.bodyEmphasis)
             }
 
             if (selected.size >= 2) {
                 SectionCard(title = "Selected comparison") {
-                    ComparisonGrid(selected, data)
+                    val archive = remember(data) { insightArchive(data.cooks, data.readings, data.results) }
+                    val compareFacts = selected.map { compareCookFacts(it, data, System.currentTimeMillis(), archive) }
+                    // 5.4: one generated sentence, only when the recorded
+                    // history supports it; otherwise it is simply absent.
+                    remember(data) { compareTeachingSentence(data) }?.let { sentence ->
+                        Text(sentence, style = PitTechTextStyles.bodyEmphasis, modifier = Modifier.testTag("compare-teaching-sentence"))
+                    }
+                    ComparisonGrid(selected, data, compareFacts)
                     val ids = selected.map { it.cook.id }.toSet()
-                    val startTimes = selected.associate { it.cook.id to it.cook.startedAtUtcMillis }
+                    // 5.1: curves align at each cook's own food-on moment.
+                    val startTimes = compareFacts.associate { it.cookId to it.foodOnUtcMillis }
                     val names = selected.associate { it.cook.id to it.cook.title }
                     comparisonDifferenceLines(selected, data.readings.filter { it.cookId in ids }, data.results.filter { it.cookId in ids }).forEachIndexed { index, line ->
                         Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("comparison-line-$index"))
                     }
-                    TemperatureChart(data.readings.filter { it.cookId in ids }, cookNames = names, cookStartTimes = startTimes, connectionGaps = data.connectionGaps.filter { it.cookId in ids })
+                    TemperatureChart(data.readings.filter { it.cookId in ids }, cookNames = names, cookStartTimes = startTimes, cookOffsetMillis = compareOffsets.filterKeys { it in ids }, connectionGaps = data.connectionGaps.filter { it.cookId in ids })
                     Text("Only recorded readings are shown. Empty periods remain empty.", style = MaterialTheme.typography.bodySmall)
+                    // 5.1: the offset stepper — nudge a cook whose food-on
+                    // mark sits off the others. Display-only; the recorded
+                    // times and every figure above never change.
+                    TurnInMetaLabel("Align at food-on · nudge a curve")
+                    compareFacts.forEach { facts ->
+                        val offset = compareOffsets[facts.cookId] ?: 0L
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(facts.title, style = PitTechTextStyles.body, modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = { compareOffsets[facts.cookId] = (offset - 300_000L).coerceAtLeast(-7_200_000L) },
+                                modifier = Modifier.testTag("compare-offset-minus-${facts.cookId}"),
+                            ) { Text("−5m") }
+                            Text(compareOffsetLabel(offset), style = PitTechTextStyles.monoReadout, modifier = Modifier.testTag("compare-offset-value-${facts.cookId}"))
+                            TextButton(
+                                onClick = { compareOffsets[facts.cookId] = (offset + 300_000L).coerceAtMost(7_200_000L) },
+                                modifier = Modifier.testTag("compare-offset-plus-${facts.cookId}"),
+                            ) { Text("+5m") }
+                        }
+                    }
+                    // 5.3 + §4.1: a projected total always states its basis;
+                    // a withheld projection says why, in the engine's words.
+                    compareFacts.filter { it.inProgress }.forEach { facts ->
+                        when {
+                            facts.projected != null -> Text(
+                                "${facts.title} total is projected ${facts.projected.basisText}.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("compare-projection-basis-${facts.cookId}"),
+                            )
+                            facts.reachedTarget -> Text(
+                                "${facts.title} has reached its recorded target.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("compare-projection-basis-${facts.cookId}"),
+                            )
+                            facts.projectionWithheldReason != null -> Text(
+                                "No projection for ${facts.title} yet — ${facts.projectionWithheldReason}.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("compare-projection-note-${facts.cookId}"),
+                            )
+                        }
+                    }
                 }
             }
 
@@ -187,7 +243,7 @@ internal fun InsightsScreen(
                         comparing = comparing,
                         selectedForCompare = item.cook.id in selectedIds,
                         onClick = {
-                            if (comparing && item.cook.status == CookStatus.COMPLETED) {
+                            if (comparing) {
                                 if (item.cook.id in selectedIds) selectedIds.remove(item.cook.id)
                                 else if (selectedIds.size < 4) selectedIds.add(item.cook.id)
                             } else onOpenCook(item.cook.id)
@@ -199,7 +255,7 @@ internal fun InsightsScreen(
                     )
                 }
             }
-            if (comparing) Text("Choose two to four completed cooks to compare.", style = MaterialTheme.typography.bodyMedium, color = tokens.inkMuted)
+            if (comparing) Text("Choose two to four cooks to compare — a cook still on the pit shows its projected total, tagged as such.", style = MaterialTheme.typography.bodyMedium, color = tokens.inkMuted)
             TextButton(onClick = { showStatistics = !showStatistics }, modifier = Modifier.testTag("insights-statistics")) { Text(if (showStatistics) "Hide statistics" else "Cook statistics") }
             if (showStatistics) {
                 InsightsStatistics(data, completed, durationValues, ratings, favoriteIds, onOpenCook)
@@ -293,7 +349,7 @@ private fun HistoryCookRow(
                     Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
                 }
             }
-            if (comparing && item.cook.status == CookStatus.COMPLETED) {
+            if (comparing) {
                 Spacer(Modifier.width(8.dp))
                 Checkbox(checked = selectedForCompare, onCheckedChange = { onToggleCompare() })
             } else {
@@ -312,14 +368,28 @@ private fun HistoryCookRow(
     }
 }
 
+/** The 5.1 stepper's readout: how far a curve sits from food-on alignment. */
+private fun compareOffsetLabel(offsetMillis: Long): String {
+    val minutes = offsetMillis / 60_000
+    return when {
+        minutes > 0 -> "+${minutes}m"
+        minutes < 0 -> "−${-minutes}m"
+        else -> "Food-on"
+    }
+}
+
 /**
  * The side-by-side comparison grid (A2 `compare-view`): one column per
- * cook over the recorded facts — time on, final temperature, time to
- * wrap, rest, verdict, and each detail rating any selected cook recorded.
+ * cook. Flowing Slice 6 (Spread 05) puts the recorded inputs (§4.2 —
+ * wrap, rub, spritz, setpoint) beside the outcomes (time on, the §4.1
+ * stall, final temperature, time to wrap, rest, verdict, detail ratings).
+ * A cook predating §4.2 reads "Not recorded" in the input rows (5.5)
+ * while its outcomes still come from its readings; an in-progress cook's
+ * time on is its §4.1 projection and wears the PROJECTED tag (5.3).
  * Missing facts stay an honest dash; nothing is estimated.
  */
 @Composable
-private fun ComparisonGrid(selected: List<CookWithDishes>, data: InsightsSnapshot) {
+private fun ComparisonGrid(selected: List<CookWithDishes>, data: InsightsSnapshot, facts: List<CompareCookFacts>) {
     val tokens = pitTechTokens()
     fun result(cookId: String, type: String) = data.results.firstOrNull { it.cookId == cookId && it.dishId == null && it.resultType == type }
         ?: data.results.firstOrNull { it.cookId == cookId && it.resultType == type }
@@ -329,13 +399,24 @@ private fun ComparisonGrid(selected: List<CookWithDishes>, data: InsightsSnapsho
         val wrap = plan.firstOrNull { it.action == "wrap" }?.at ?: return "—"
         return formatMinutes(((wrap - anchor).coerceAtLeast(0) / 60_000).toDouble())
     }
+    fun timeOn(item: CookWithDishes, cookFacts: CompareCookFacts): String = when {
+        !cookFacts.inProgress -> item.cook.endedAtUtcMillis?.let { formatMinutes(cookHeatingMinutes(item)) } ?: "—"
+        cookFacts.projected != null -> "${formatMinutes(cookFacts.projected.earliestMinutes)} – ${formatMinutes(cookFacts.projected.latestMinutes)}"
+        cookFacts.reachedTarget -> "${formatMinutes(cookFacts.elapsedMinutes)} · at target"
+        else -> "${formatMinutes(cookFacts.elapsedMinutes)} so far"
+    }
     val detailRows = listOf(
         "Bark" to "bark", "Tenderness" to "tenderness", "Juiciness" to "juiciness",
         "Smoke" to "smoke", "Seasoning" to "seasoning",
     ).filter { (_, type) -> selected.any { result(it.cook.id, type)?.numericValue != null } }
     val rows: List<Pair<String, List<String>>> = buildList {
         add("Cook" to selected.map { it.cook.title })
-        add("Time on" to selected.map { item -> item.cook.endedAtUtcMillis?.let { formatMinutes(cookHeatingMinutes(item)) } ?: "—" })
+        add("Wrap" to facts.map { it.wrapText })
+        add("Rub" to facts.map { it.rubText })
+        add("Spritz" to facts.map { it.spritzText })
+        add("Setpoint" to facts.map { it.setpointText })
+        add("Time on" to selected.mapIndexed { index, item -> timeOn(item, facts[index]) })
+        add("Stall" to facts.map { cookFacts -> cookFacts.stallMinutes?.let { formatMinutes(it) } ?: "—" })
         add("Final temp" to selected.map { item -> result(item.cook.id, "final_temperature")?.numericValue?.let { "${formatResultNumber(it)}°" } ?: "—" })
         add("To wrap" to selected.map { wrapOffset(it) })
         add("Rest" to selected.map { item -> result(item.cook.id, "rest_minutes")?.numericValue?.let { formatMinutes(it) } ?: "—" })
@@ -364,12 +445,26 @@ private fun ComparisonGrid(selected: List<CookWithDishes>, data: InsightsSnapsho
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(label, style = PitTechTextStyles.body, color = tokens.inkMuted, modifier = Modifier.width(86.dp))
-                values.forEach { value ->
-                    Text(
-                        value,
-                        style = if (label == "Cook") PitTechTextStyles.bodyEmphasis else PitTechTextStyles.monoReadout,
-                        modifier = Modifier.weight(1f),
-                    )
+                values.forEachIndexed { index, value ->
+                    // 5.3: the projected total wears its tag in the cell —
+                    // it is never rendered as if it were a recorded fact.
+                    if (label == "Time on" && facts.getOrNull(index)?.projected != null) {
+                        Column(Modifier.weight(1f)) {
+                            Text(value, style = PitTechTextStyles.monoReadout)
+                            Text(
+                                "PROJECTED",
+                                style = PitTechTextStyles.metaLabel,
+                                color = tokens.attentionText,
+                                modifier = Modifier.testTag("compare-projected-tag-${facts[index].cookId}"),
+                            )
+                        }
+                    } else {
+                        Text(
+                            value,
+                            style = if (label == "Cook") PitTechTextStyles.bodyEmphasis else PitTechTextStyles.monoReadout,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         }
