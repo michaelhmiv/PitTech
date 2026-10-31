@@ -112,6 +112,12 @@ struct ProPersonalAnalysisView: View {
                                 )
                             }
                         }
+                        if store.library.cooks.count >= 2 {
+                            // Flowing Slice 6 (Spread 05): the compare grid —
+                            // recorded inputs beside outcomes, PROJECTED
+                            // totals tagged, one data-gated sentence.
+                            ProCompareSection()
+                        }
                         NavigationLink {
                             ProRecapBuilderView()
                         } label: {
@@ -178,6 +184,137 @@ struct ProAnalysisCard: View {
             }
         }
         .accessibilityIdentifier(testTag)
+    }
+}
+
+// MARK: - Compare cooks (Flowing Slice 6, Spread 05)
+
+/// The aligned-compare surface's grid: pick two to four cooks — including
+/// one still on the pit — and what each cook recorded doing (§4.2 inputs)
+/// sits beside what happened (outcomes incl. the §4.1 stall). A cook from
+/// before inputs were recorded says "Not recorded" — never a guess; a
+/// running cook's total is its §4.1 projection, tagged PROJECTED with its
+/// basis stated, never blended into the recorded facts. One generated
+/// sentence teaches from the cook's own history when — and only when —
+/// the recorded data supports it. All figures come from `CompareFacts`,
+/// the mirror of Android's compare model.
+struct ProCompareSection: View {
+    @Environment(CookStore.self) private var store
+    @State private var selected: Set<String> = []
+
+    private var archive: InsightArchiveInput { store.insightsArchive() }
+
+    private var cooks: [CompareCookInput] { store.library.cooks.map(CompareCookInput.init(record:)) }
+
+    private var selectedCooks: [CompareCookInput] { cooks.filter { selected.contains($0.id) } }
+
+    private var facts: [CompareCookFacts] {
+        let archive = archive
+        let now = Int64(Date.now.timeIntervalSince1970 * 1000)
+        return selectedCooks.map { CompareFacts.facts(cook: $0, archive: archive, nowUtcMillis: now) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TurnInBannerText("Compare cooks", font: PitTechFont.bannerTitle)
+            Text("Choose two to four cooks to compare — a cook still on the pit shows its projected total, tagged as such.")
+                .font(.caption)
+                .foregroundStyle(PitTechStyle.supporting)
+            ForEach(cooks, id: \.id) { cook in
+                Button {
+                    if selected.contains(cook.id) {
+                        selected.remove(cook.id)
+                    } else if selected.count < 4 {
+                        selected.insert(cook.id)
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: selected.contains(cook.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(PitTechStyle.accent)
+                            .accessibilityHidden(true)
+                        Text(cook.title)
+                            .font(.subheadline)
+                            .foregroundStyle(PitTechStyle.ink)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if cook.status != "completed" {
+                            Text("On the pit")
+                                .font(.caption)
+                                .foregroundStyle(PitTechStyle.supporting)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
+                }
+                .accessibilityIdentifier("compare-select-\(cook.id)")
+            }
+            if selectedCooks.count >= 2 {
+                compareCard
+            }
+        }
+    }
+
+    private var compareCard: some View {
+        let facts = facts
+        return TurnInCard {
+            VStack(alignment: .leading, spacing: 10) {
+                // 5.4: one generated sentence, only when the recorded
+                // history supports it; otherwise it is simply absent.
+                if let sentence = CompareFacts.teachingSentence(cooks: cooks, archive: archive) {
+                    Text(sentence)
+                        .font(PitTechFont.body)
+                        .foregroundStyle(PitTechStyle.ink)
+                        .accessibilityIdentifier("compare-teaching-sentence")
+                }
+                ForEach(CompareFacts.gridRows(facts: facts), id: \.label) { row in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(row.label)
+                            .font(PitTechFont.body)
+                            .foregroundStyle(PitTechStyle.inkMuted)
+                            .frame(width: 86, alignment: .leading)
+                        ForEach(Array(row.cells.enumerated()), id: \.offset) { index, cell in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(cell.text)
+                                    .font(PitTechFont.monoMeta)
+                                    .foregroundStyle(PitTechStyle.ink)
+                                // 5.3: the projected total wears its tag in
+                                // the cell — never rendered as fact.
+                                if cell.isProjected {
+                                    Text("PROJECTED")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(PitTechStyle.marigold)
+                                        .accessibilityIdentifier("compare-projected-tag-\(facts[index].cookId)")
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                // 5.3 + §4.1: a projected total always states its basis;
+                // a withheld projection says why, in the engine's words.
+                ForEach(facts.filter { $0.inProgress }, id: \.cookId) { fact in
+                    if let projected = fact.projected {
+                        Text("\(fact.title) total is projected \(projected.basisText).")
+                            .font(.caption)
+                            .foregroundStyle(PitTechStyle.supporting)
+                            .accessibilityIdentifier("compare-projection-basis-\(fact.cookId)")
+                    } else if fact.reachedTarget {
+                        Text("\(fact.title) has reached its recorded target.")
+                            .font(.caption)
+                            .foregroundStyle(PitTechStyle.supporting)
+                            .accessibilityIdentifier("compare-projection-basis-\(fact.cookId)")
+                    } else if let reason = fact.projectionWithheldReason {
+                        Text("No projection for \(fact.title) yet — \(reason).")
+                            .font(.caption)
+                            .foregroundStyle(PitTechStyle.supporting)
+                            .accessibilityIdentifier("compare-projection-note-\(fact.cookId)")
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("compare-grid")
     }
 }
 
