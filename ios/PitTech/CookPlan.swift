@@ -183,7 +183,7 @@ enum CookPlanEngine {
             let ready = !plan.paused && p.status == "pending" && eligibleStage && primaryReady && (p.snoozedUntil == nil || now >= p.snoozedUntil!)
             let waitingFor: String?
             if !eligibleStage { waitingFor = "Waiting for \(s.stage)" }
-            else if anchorTime == nil, s.trigger == "elapsed" || s.trigger == "after_action" { waitingFor = "Waiting for \(CookStore.actionLabel(anchor))" }
+            else if anchorTime == nil, s.trigger == "elapsed" || s.trigger == "after_action" { waitingFor = "Waiting for \(actionLabel(anchor))" }
             else if s.trigger == "temperature", !temperatureReady, !(lastActual != nil && s.repeatEveryMinutes != nil) { waitingFor = "Waiting for a fresh temperature" }
             else { waitingFor = nil }
             return EvaluatedStep(step: s, progress: p, dishId: dishId, dueAt: p.snoozedUntil.map { max($0, due ?? $0) } ?? due, ready: ready, waitingFor: waitingFor)
@@ -205,12 +205,20 @@ enum CookPlanEngine {
         return next
     }
 
+    /// The action vocabulary's display labels — the same table
+    /// CookStore.actionLabel carries, duplicated because the engine is
+    /// deliberately non-isolated (pure, callable from any context,
+    /// like Android's).
+    static func actionLabel(_ action: String) -> String {
+        ["food_on": "Food on", "spritz": "Spritz", "wrap": "Wrap", "check_in": "Check", "remove": "Remove", "rest_start": "Start rest", "hold_start": "Start hold", "dish_done": "Ready to serve", "preheat_start": "Preheat", "season": "Season", "trim": "Trim", "marinate": "Marinate", "add_fuel": "Add fuel"][action] ?? "Cook note"
+    }
+
     /// The plan sheet's step sublabel (Android's stepDescription).
     static func stepDescription(_ s: PlaybookStep) -> String {
         let base: String
         switch s.trigger {
         case "elapsed": base = "Check \(s.minutes) min after food goes on"
-        case "after_action": base = "Check \(s.minutes) min after \(CookStore.actionLabel(s.anchor))"
+        case "after_action": base = "Check \(s.minutes) min after \(actionLabel(s.anchor))"
         case "temperature": base = "Check at \(s.temperatureF.map { "\($0)" } ?? "") °F"
         case "clock": base = "Check at \(s.clockAtUtcMillis.map { RecipeReferenceTimeline.time(Double($0)) } ?? "")"
         default: base = "When ready"

@@ -106,8 +106,8 @@ struct CookAlertsView: View {
         .background(PitTechStyle.canvas.ignoresSafeArea())
         .task { notificationsDenied = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied }
         .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
-            if let editing {
-                CookAlertEditor(cookId: cookId, initial: editing, initialTitle: editingTitle, isNew: isNewRule) { editing = nil }
+            if let rule = editing {
+                CookAlertEditor(cookId: cookId, initial: rule, initialTitle: editingTitle, isNew: isNewRule) { editing = nil }
             }
         }
     }
