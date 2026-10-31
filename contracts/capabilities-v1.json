@@ -34,7 +34,7 @@
         ]
       },
       "mcp": {
-        "status": "planned_disabled",
+        "status": "implemented",
         "tools": [
           "get_connection_status",
           "get_capabilities",
@@ -322,7 +322,7 @@
         ]
       },
       "mcp": {
-        "status": "planned_disabled",
+        "status": "implemented",
         "tools": [
           "list_notes",
           "get_note",
@@ -1233,7 +1233,7 @@
         ]
       },
       "mcp": {
-        "status": "planned_disabled",
+        "status": "implemented",
         "tools": [
           "list_photos",
           "get_photo",
@@ -1491,7 +1491,7 @@
         ]
       },
       "mcp": {
-        "status": "planned_disabled",
+        "status": "implemented",
         "tools": [
           "list_companions",
           "get_companion",
@@ -2092,7 +2092,7 @@
         ]
       },
       "mcp": {
-        "status": "planned_disabled",
+        "status": "implemented",
         "tools": [
           "get_temperature_history",
           "get_cook_summary",
@@ -2155,7 +2155,7 @@
         ]
       },
       "mcp": {
-        "status": "planned_disabled",
+        "status": "implemented",
         "tools": [
           "list_sharing_drafts",
           "get_sharing_draft",
