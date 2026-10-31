@@ -8,7 +8,8 @@ import { McpGrants, type McpGrantRecord, type McpGrantStore, type McpPrincipal }
 import { AuthSecrets, credential } from '../src/auth-credentials.ts';
 import { PrivateLibraryService, type McpPhotoStore, type SnapshotReadWriter } from '../src/mcp-library.ts';
 import { McpServer } from '../src/mcp-server.ts';
-import { syncEnvelope, syncTransition, type SyncEnvelope } from '../src/sync-envelope.ts';
+import { syncTransition, type SyncEnvelope } from '../src/sync-envelope.ts';
+import { privateLibraryEnvelope } from '../src/sync-projection.ts';
 import type { McpExportRecord, McpImportPreviewRecord, McpPortabilityStore } from '../src/mcp-portability.ts';
 
 const NOW = 1_800_000_000_000;
@@ -33,7 +34,7 @@ class FakeSnapshots implements SnapshotReadWriter {
   async status() { return { version: this.version, updatedAt: this.version ? NOW : null }; }
   async receiptFor(_user: string, mutationId: string) { return this.receipts.get(mutationId)?.receipt; }
   async put(_user: string, value: unknown) {
-    const next = syncEnvelope(value);
+    const next = privateLibraryEnvelope(value);
     const hash = digest(Buffer.from(stable(next)));
     const prior = this.receipts.get(next.mutationId);
     if (prior) { if (prior.hash !== hash) throw new ApiError(409, 'retry_content_changed'); return structuredClone(prior.receipt); }
@@ -178,9 +179,13 @@ test('photos without available bytes are blocked in preview, and import with a v
 
 test('sharing drafts: create/get/list/delete with the canonical fixture document', async () => {
   const s = await setup();
-  const cases = JSON.parse(await readFile(new URL('../../contracts/fixtures/private-sync-projection-cases-v1.json', import.meta.url), 'utf8')) as { cases: { rows?: { payload?: { kind?: string; payload?: unknown } }[] }[] };
+  const cases = JSON.parse(await readFile(new URL('../../contracts/fixtures/private-sync-projection-cases-v1.json', import.meta.url), 'utf8')) as { cases: { name?: string; rows?: { payload?: { kind?: string; payload?: unknown } }[] }[] };
+  // The canonical POSITIVE case's document: the other sharing_draft
+  // fixture cases are negative (unknown field, unowned photo) and
+  // the library validator rightly refuses them — a distinction the
+  // old snapshot fake could not see (issues #227/#228).
   let document: unknown;
-  for (const c of cases.cases) for (const row of c.rows ?? []) if (row.payload?.kind === 'sharing_draft') document = row.payload.payload;
+  for (const c of cases.cases) for (const row of c.rows ?? []) if (c.name === 'sharing draft projects with frozen history' && row.payload?.kind === 'sharing_draft') document = row.payload.payload;
   assert.ok(document, 'fixture document found');
   const created = await s.call('create_sharing_draft', { title: 'Brisket story', document });
   assert.equal(created.isError, false, created.content?.[0]?.text);

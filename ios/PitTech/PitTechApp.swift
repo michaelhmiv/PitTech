@@ -20,6 +20,12 @@ struct PitTechApp: App {
     @State private var benchmarks: CommunityBenchmarksLoader
     @State private var customization: ProCustomizationStore
     init() {
+        // PL-20 (#184): crash capture installs before anything else can
+        // crash, and the previous session is judged before this session
+        // overwrites its marker.
+        CrashDiagnostics.install()
+        // #183: the guidance / alert / legacy-reminder action categories.
+        PitTechNotificationCategories.register()
         let account = _account.wrappedValue
         _pro = State(initialValue: ProSubscriptionCoordinator.forApp(account: account))
         _benchmarks = State(initialValue: CommunityBenchmarksLoader.forApp(account: account, pro: _pro.wrappedValue))
@@ -52,7 +58,7 @@ struct PitTechApp: App {
                 .environment(AdsConsentManager.shared)
                 .onChange(of: account.stateUserId) { _, _ in community.controlsChanged() }
                 .onChange(of: account.stateUserId) { _, _ in sync.refresh() }
-                .onChange(of: scenePhase) { _, phase in if phase == .active { sync.resumeAutomaticSync() } else { sync.pauseAutomaticSync() } }
+                .onChange(of: scenePhase) { _, phase in CrashDiagnostics.sessionPhaseChanged(phase); if phase == .active { sync.resumeAutomaticSync() } else { sync.pauseAutomaticSync() } }
                 .onChange(of: account.stateUserId) { _, _ in Task { await pro.refresh() } }
                 .onChange(of: account.deletionRecord?.receipt?.deletionId) { _, _ in communityControls.reload(); community.controlsChanged() }
                 .tint(PitTechStyle.accent)
@@ -80,6 +86,9 @@ struct PitTechApp: App {
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
                     await store.refreshReminderDeliveryHistory()
                     store.save()
+                    // #183: legacy reminders carry their own scheduled
+                    // requests; re-arm any that predate this launch.
+                    store.rescheduleLegacyReminderNotifications()
                     #if DEBUG
                     if !CommandLine.arguments.contains("--ui-test-reset") && !CommandLine.arguments.contains("--screenshot-no-ads") && ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { AdsConsentManager.shared.gatherConsent() }
                     #else

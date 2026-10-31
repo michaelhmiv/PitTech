@@ -8,6 +8,11 @@ struct NativeFeedbackSubmission: Codable {
     var platform = "ios"
     var osVersion: String
     var device: String
+    /// PL-20 (#184): the saved crash report, attached only when the user
+    /// opts in from the composer (and never for a feature idea — the
+    /// relay drops it there too, as Android's serializer does). The
+    /// relay's field shape is exactly DiagnosticReport's five fields.
+    var diagnosticReport: DiagnosticReport? = nil
 }
 
 enum NativeFeedbackError: LocalizedError {

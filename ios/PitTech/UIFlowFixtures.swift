@@ -21,6 +21,10 @@ struct ScreenshotTextSize: ViewModifier {
         // PL-13: a kept Start Cook setup draft is device state too — a reset
         // launch starts with no draft, like a fresh install.
         clearSetupDraft()
+        // PL-20 (#184): crash diagnostics are device state too — every
+        // fixture launch starts with none pending, except the fixture
+        // that seeds one below.
+        CrashDiagnostics.shared.resetForUITests()
         if CommandLine.arguments.contains("--ui-test-pack") { prepareIncomingPackFixture(); return }
         if !CommandLine.arguments.contains("--ui-test-empty") {
             for (name, category) in [("Chicken", "Poultry"), ("Mac and cheese", "Pasta"), ("Pork", "Pork")] {
@@ -42,6 +46,8 @@ struct ScreenshotTextSize: ViewModifier {
                 } catch { assertionFailure("UI fixture failed: " + error.localizedDescription) }
             }
         }
+        if CommandLine.arguments.contains("--ui-test-crash-recovery") { prepareCrashRecoveryFixture() }
+        if CommandLine.arguments.contains("--ui-test-plan-alerts") { preparePlanAlertsFixture() }
         if CommandLine.arguments.contains("--ui-test-flowing") { prepareFlowingFixture() }
         if CommandLine.arguments.contains("--ui-test-flowing-story") { prepareFlowingStoryFixture() }
         if CommandLine.arguments.contains("--ui-test-capture") {
@@ -65,6 +71,61 @@ struct ScreenshotTextSize: ViewModifier {
         }
         save()
     }
+    /// PL-20 (#184, --ui-test-crash-recovery): one active cook that was
+    /// "open at the crash", plus a pending diagnostic report with a fixed
+    /// reference code, so the recovery surface and the feedback attach
+    /// preview are deterministic.
+    private func prepareCrashRecoveryFixture() {
+        startCook(title: "Crash fixture brisket", firstDish: "Brisket")
+        guard let cook = activeCooks.first else { return }
+        let report = DiagnosticReport(
+            referenceCode: "PT-1A2B3C4D",
+            occurredAtUtc: "2026-10-30 09:15:00 UTC",
+            source: "Uncaught application exception",
+            summary: "FixtureException: seeded for the crash-recovery flow",
+            details: "Thread: main\nException: FixtureException\n\nSeeded stack trace")
+        CrashDiagnostics.shared.saveReport(report, occurredAtUtcMillis: 1_793_000_000_000)
+        CrashDiagnostics.shared.recordOpenCook(cook.id)
+    }
+
+    /// Issue #183 (--ui-test-plan-alerts): one active cook carrying the
+    /// three surfaces this slice lights up — a guidance plan with an
+    /// elapsed step already due and a manual rest step, a target alert
+    /// made active by a fresh reading, and legacy reminders (one due,
+    /// one future).
+    private func preparePlanAlertsFixture() {
+        startCook(title: "Guidance brisket", firstDish: "Brisket")
+        guard let cook = activeCooks.first, let dish = dishRecords(cook.id).first else { return }
+        let now = Int64(Date.now.timeIntervalSince1970 * 1000)
+        do {
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: Double(now - 3_600_000)))
+            let book = CookPlaybook(
+                name: "Guidance fixture",
+                draft: PlaybookCookDraft(title: "Guidance brisket", dishes: [PlaybookDishDraft(name: "Brisket", foodType: "Beef")]),
+                steps: [
+                    PlaybookStep(id: "ui-step-wrap", dishIndex: 0, action: "wrap", title: "Wrap when bark sets", instructions: "Wrap in butcher paper.", trigger: "elapsed", minutes: 30),
+                    PlaybookStep(id: "ui-step-rest", dishIndex: 0, action: "rest_start", title: "Rest the brisket", instructions: "Rest in a cooler.", trigger: "manual"),
+                ])
+            let plan = CookPlan(book: book, dishIds: [dish.id])
+            library.companionRecords.append(.object([
+                "id": .string("plan:" + cook.id), "kind": .string("plan"), "cookId": .string(cook.id),
+                "title": .string("Guidance fixture"), "payload": .string(try CookPlanCodec.encode(plan)),
+                "createdAtUtcMillis": .number(Double(now)), "updatedAtUtcMillis": .number(Double(now)),
+            ]))
+            try saveCookAlert(cookId: cook.id, title: "Brisket target", rule: CookAlertRule(dishId: dish.id, targetF: 165))
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, title: "Checked temp", occurredAt: Double(now),
+                temperatures: [NoteTemperatureDraft(probeName: "Probe 1", valueText: "170", unit: "°F", measuredAt: Double(now), dishId: dish.id)]))
+            // The due reminder predates "now", so it is inserted as a
+            // row (createCookReminder rightly refuses past times).
+            library.reminders.append(.object(LegacyReminder(row: [
+                "id": .string("ui-legacy-due"), "cookId": .string(cook.id), "title": .string("Check the bark"),
+                "dueAtUtcMillis": .number(Double(now - 60_000)), "timeZoneId": .string(TimeZone.current.identifier),
+                "status": .string("pending"), "createdAtUtcMillis": .number(Double(now - 3_600_000)),
+            ]).row))
+            _ = try createCookReminder(cookId: cook.id, title: "Rotate the grate", dueAtUtcMillis: now + 3_600_000)
+        } catch { assertionFailure("Plan/alerts fixture failed: " + error.localizedDescription) }
+    }
+
     /// Flowing Slice 2 (--ui-test-flowing): one finished brisket (the
     /// ghost/history source) and one live brisket six hours in, out of
     /// the band and climbing at a pace the engine can state a range for.

@@ -46,7 +46,13 @@ struct CookDetailView: View {
     @State private var finishing = false
     @State private var completionChoices = false
     @State private var showingDevices = false
-    @State private var showingReminders = false
+    /// One pushed sub-surface at a time: two stacked
+    /// navigationDestination(isPresented:) modifiers on one view can
+    /// silently starve the second, so Reminders and Alerts (#183)
+    /// share a single route-driven destination.
+    @State private var detailRoute: String?
+    @State private var alertFocusId: String?
+    @State private var legacyCheckIn: LegacyReminder?
     @State private var showingResults = false
     @State private var reminderCheckInRuleId: String?
     @ScaledMetric(relativeTo: .caption) private var quickBarHeight: CGFloat = 52
@@ -135,7 +141,7 @@ struct CookDetailView: View {
         var verdict: LiveVerdict?
         if cook.isActive, cook.status != "paused", assessment != nil || !pendingReminders.isEmpty {
             verdict = LiveGuidance.verdict(
-                needsAttention: 0,
+                needsAttention: store.cookAlerts(cookId: cookId).count { $0.state.active },
                 stall: assessment?.stall ?? .unknown,
                 finish: displayFinish ?? .planOnly("not enough readings yet"),
                 nextReminder: pendingReminders.first.map { (title: $0.title, dueUtcMillis: Int64($0.due)) },
@@ -210,12 +216,24 @@ struct CookDetailView: View {
                 ok: readings.last != nil,
                 label: "Watching the pit",
                 detail: readings.last.map { "Last reading \($0.measuredAt.formatted(date: .omitted, time: .shortened)) · \($0.source)" } ?? "No readings yet — hand-logged entries are all the net has")
+            // #183 (E1/E3): the missing-readings alert is part of the
+            // net now — provisioned by default when a source is
+            // attached, toggleable here like Android's overnight panel.
+            if let missing = store.cookAlerts(cookId: cookId).first(where: { $0.rule.type == "missing" }) {
+                overnightRow(
+                    ok: missing.rule.enabled,
+                    label: "Missing readings alert",
+                    detail: missing.rule.enabled ? "On — watching for a silent source" : "Off — silence will not wake you")
+                Button(missing.rule.enabled ? "Turn off missing-readings alert" : "Turn on missing-readings alert") {
+                    store.changeCookAlert(id: missing.id, action: "toggle")
+                }
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("overnight-missing-toggle")
+            }
             overnightRow(
                 ok: !pendingReminders.isEmpty,
                 label: "Next reminder",
                 detail: pendingReminders.first.map { "\($0.title) · \(clockTime(Int64($0.due)))" } ?? "None set — nothing is scheduled to check in")
-            Text("On iOS the overnight net today is your reminders plus this test alert.")
-                .font(.caption).foregroundStyle(PitTechStyle.supporting)
             Button("Send test alert") { OvernightTestAlert.post(cookId: cookId, cookTitle: cook.title); overnightTestSent = true }
                 .buttonStyle(.borderedProminent).frame(minHeight: 44).accessibilityIdentifier("overnight-test-alert")
             if overnightTestSent {
@@ -305,19 +323,49 @@ struct CookDetailView: View {
                     }
                 }
                 .task { notificationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus }
+                // PL-20 (#184): this cook is the open one — crash recovery
+                // returns here. Device-local diagnostics state only.
+                .task { CrashDiagnostics.shared.recordOpenCook(cookId) }
                 .onAppear { latchInitialSection() }
                 .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
-                .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId, checkInRuleId: reminderCheckInRuleId) }
+                .navigationDestination(isPresented: Binding(get: { detailRoute != nil }, set: { if !$0 { detailRoute = nil } })) {
+                    if detailRoute == "alerts" {
+                        CookAlertsView(cookId: cookId, focusAlertId: alertFocusId)
+                    } else {
+                        MealRemindersView(cookId: cookId, checkInRuleId: reminderCheckInRuleId)
+                    }
+                }
+                .sheet(item: $legacyCheckIn) { reminder in LegacyReminderCheckInView(reminder: reminder) }
                 .task {
                     // PL-02: a reminder notification tap opens that reminder's
                     // check-in (the Reminders surface, scrolled to its Due
                     // check-in section), not just the cook.
                     if let ruleId = store.notificationReminderRuleId, store.reminderRule(ruleId)?["cookId"]?.stringValue == cookId {
                         reminderCheckInRuleId = ruleId
-                        showingReminders = true
+                        detailRoute = "reminders"
                         store.notificationReminderRuleId = nil
                     }
+                    // PL-03 (#183): an alert tap opens the Alerts surface
+                    // at that rule, not just the cook.
+                    if let alertId = store.notificationAlertId, store.alertEntry(alertId)?.cookId == cookId {
+                        alertFocusId = alertId
+                        detailRoute = "alerts"
+                        store.notificationAlertId = nil
+                    }
+                    // #183: a legacy reminder tap opens its "How did it
+                    // go?" check-in while the reminder is still pending.
+                    if let reminderId = store.notificationLegacyReminderId,
+                       let reminder = store.legacyReminder(reminderId), reminder.cookId == cookId, reminder.status == "pending" {
+                        legacyCheckIn = reminder
+                        store.notificationLegacyReminderId = nil
+                    }
                 }
+                // #183: alert/guidance evaluation rides the save()
+                // funnel — every mutation re-evaluates, and the
+                // reconciliations schedule the time-based wake-ups
+                // (due steps, silence windows) as notifications at
+                // save time, so no periodic full-save ticker is
+                // needed on this screen.
                 .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
                 .sheet(item: $chartContext) { context in LiveChartView(cookId: cookId, leadDishId: context.leadDishId, etaLatestUtcMillis: context.etaLatestUtcMillis) }
                 .sheet(isPresented: $showingResults) { CookResultsSheet(cookId: cookId) }
@@ -403,7 +451,7 @@ struct CookDetailView: View {
                 Button { open() } label: { Label("Log", systemImage: "note.text").frame(minHeight: 44) }.accessibilityIdentifier("meal-log")
                 Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer").frame(minHeight: 44) }
                 Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera").frame(minHeight: 44) }
-                Button { showingReminders = true } label: { Label("Reminders", systemImage: "bell").frame(minHeight: 44) }
+                Button { detailRoute = "reminders" } label: { Label("Reminders", systemImage: "bell").frame(minHeight: 44) }
             }.font(.caption).buttonStyle(.bordered).fixedSize(horizontal: true, vertical: false).frame(minHeight: 44)
         }.frame(height: quickBarHeight)
     }
@@ -424,6 +472,15 @@ struct CookDetailView: View {
                             if let detail = verdict.detail { Text(detail).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted).accessibilityIdentifier("live-verdict-detail") }
                         }
                     }
+                }
+                // PL-03 (#183): the alerts strip — named acknowledged
+                // rules and the needs-attention count, on Live, without
+                // opening anything. Silent when the cook has no rules.
+                if let strip = store.alertStripSummary(cookId: cookId) {
+                    Text(strip)
+                        .font(PitTechFont.monoMeta)
+                        .foregroundStyle(PitTechStyle.inkMuted)
+                        .accessibilityIdentifier("live-alert-strip")
                 }
                 liveZone(cook, now: context.date)
                 // 1.3: the chart is the hero and a door — the same chart
@@ -452,6 +509,9 @@ struct CookDetailView: View {
                 if cook.isActive { Button("Log preheat started") { open(category: "action", action: "preheat_start") }; Text("Preheat can overlap prep. Cooking starts at actual Food on.").font(.caption).foregroundStyle(.secondary) }
                 LivePanel(id: "guidance", title: "Guidance", summary: store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Legacy timing") {
                     VStack(alignment: .leading, spacing: 12) {
+                        // #183: the guidance plan's next-action card —
+                        // renders only when the cook has a plan.
+                        CookGuidanceCard(cookId: cookId, now: context.date)
                         if let goal = store.serveGoal(cookId: cookId) {
                             ActiveServeGoalView(cookId: cookId, plan: goal)
                         }
@@ -460,7 +520,13 @@ struct CookDetailView: View {
                     }
                 }
                 LivePanel(id: "reminders", title: "Reminders", summary: remindersSummary) {
-                    Button("Meal reminders") { showingReminders = true }
+                    Button("Meal reminders") { detailRoute = "reminders" }
+                }
+                // #183: the Cook Alerts panel — Android's Live alerts
+                // surface; the strip above carries the live state.
+                LivePanel(id: "alerts", title: "Alerts", summary: store.alertStripSummary(cookId: cookId)) {
+                    Button("Cook alerts") { detailRoute = "alerts" }
+                        .accessibilityIdentifier("live-cook-alerts")
                 }
                 if cook.isActive {
                     LivePanel(id: "checklist", title: "Checklist") { CookPrepChecklist(cookId: cookId) }
@@ -678,14 +744,20 @@ struct CookDetailView: View {
     private func tempText(_ sample: TemperatureSample) -> String {
         sample.value.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(sample.value))\(sample.unit)" : String(format: "%.1f%@", sample.value, sample.unit)
     }
-    /// Enabled rules for this cook whose current occurrence is still pending.
+    /// Enabled rules for this cook whose current occurrence is still
+    /// pending, merged with the cook's pending legacy reminders (#183) —
+    /// one "next reminder" answer, like Android's overnight panel.
     private var pendingReminders: [(title: String, due: Double)] {
         let rules = store.library.reminderRules.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && $0["enabled"]?.boolValue == true }
-        return rules.compactMap { rule in
+        let fromRules = rules.compactMap { rule -> (title: String, due: Double)? in
             guard let id = rule["id"]?.stringValue, let state = store.reminderState(id),
                   state["status"]?.stringValue == "pending", let due = state["dueAtUtcMillis"]?.numberValue else { return nil }
             return (rule["title"]?.stringValue ?? "Reminder", due)
-        }.sorted { $0.due < $1.due }
+        }
+        let fromLegacy = store.legacyReminders(cookId: cookId)
+            .filter { $0.status == "pending" }
+            .map { (title: $0.title, due: Double($0.dueAtUtcMillis)) }
+        return (fromRules + fromLegacy).sorted { $0.due < $1.due }
     }
     private var remindersSummary: String {
         pendingReminders.isEmpty ? "None pending" : "\(pendingReminders.count) pending · next \(RecipeReferenceTimeline.time(pendingReminders[0].due))"
@@ -700,7 +772,7 @@ struct CookDetailView: View {
                     Text("Due \(RecipeReferenceTimeline.time(next.due))").font(.caption).foregroundStyle(PitTechStyle.supporting)
                 }
                 Spacer()
-                Button("Reminders") { showingReminders = true }
+                Button("Reminders") { detailRoute = "reminders" }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)

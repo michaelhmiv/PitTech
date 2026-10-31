@@ -16,16 +16,48 @@ struct ContentView: View {
     @AppStorage(WelcomeGate.seenKey) private var welcomeSeen = false
     @State private var mealsRestoreRequested = false
     @State private var showingWelcomeConnections = false
+    // PL-20 (#184): the crash report pending at launch, captured before
+    // any view exists — the launch surface order is Android's:
+    // crash recovery, then welcome, then the app.
+    @State private var crashReportAtLaunch: DiagnosticReport?
+    @State private var crashResumeCookId: String?
+    @State private var showingCrashFeedback = false
+
+    init() {
+        let pending = CrashDiagnostics.shared.pendingReport()
+        _crashReportAtLaunch = State(initialValue: pending)
+        _crashResumeCookId = State(initialValue: pending != nil ? CrashDiagnostics.shared.openCookAtCrash() : nil)
+    }
+
+    /// The recovery surface shows on real launches; fixture launches
+    /// suppress it like the welcome, except the fixture that seeds it.
+    private var crashSurfaceActive: Bool {
+        crashReportAtLaunch != nil && (!WelcomeGate.suppressedForTesting || CommandLine.arguments.contains("--ui-test-crash-recovery"))
+    }
 
     private var showWelcome: Bool {
-        // iOS has no crash-recovery surface today, so no crash can be pending
-        // at launch here; the rule matches Android's regardless.
-        WelcomeGate.shouldShow(seen: welcomeSeen, crashPendingAtLaunch: false, suppressedForTesting: WelcomeGate.suppressedForTesting)
+        WelcomeGate.shouldShow(seen: welcomeSeen, crashPendingAtLaunch: crashSurfaceActive, suppressedForTesting: WelcomeGate.suppressedForTesting)
     }
 
     var body: some View {
         Group {
-            if showWelcome {
+            if crashSurfaceActive, let report = crashReportAtLaunch {
+                CrashRecoveryView(report: report, onContinue: {
+                    CrashDiagnostics.shared.acknowledge(report)
+                    crashReportAtLaunch = nil
+                    // Continue lands back on the cook that was open at
+                    // the crash (PL-20), through the same presentation
+                    // a notification tap uses.
+                    if let id = crashResumeCookId, store.library.cooks.contains(where: { $0.id == id }) {
+                        store.notificationCookId = id
+                    }
+                }, onAttach: {
+                    CrashDiagnostics.shared.acknowledge(report)
+                    crashReportAtLaunch = nil
+                    selectedTab = "more"
+                    showingCrashFeedback = true
+                })
+            } else if showWelcome {
                 WelcomeView(
                     onStartCooking: { welcomeSeen = true },
                     onRestoreBackup: { welcomeSeen = true; mealsRestoreRequested = true },
@@ -37,6 +69,12 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingWelcomeConnections) {
             NavigationStack { NativeTelemetryConnectionsView(runtime: telemetry, embedded: true) }
+        }
+        .sheet(isPresented: $showingCrashFeedback) {
+            // PL-20 (#184): "Attach to a problem report" lands in the
+            // feedback composer with the report already included — the
+            // preview there shows the exact payload before anything sends.
+            NavigationStack { NativeFeedbackView(includeDiagnosticOnOpen: true) }
         }
     }
 
@@ -79,12 +117,31 @@ struct ContentView: View {
         .preferredColorScheme(store.appearance)
         .background(PitTechStyle.canvas)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PitTechReminderCook"))) { notification in if let payload = notification.object as? [String: Any] {
-            if let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
-            if payload["open"] as? Bool == true {
+            let kind = payload["kind"] as? String
+            if kind == nil, let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
+            // #183: a category action acts in place and never opens a
+            // surface — the same rule as Android's receivers.
+            if let action = payload["actionIdentifier"] as? String,
+               action != UNNotificationDefaultActionIdentifier, action != UNNotificationDismissActionIdentifier {
+                switch kind {
+                case "guidance":
+                    store.applyGuidanceNotificationAction(cookId: payload["cookId"] as? String ?? "", stepId: payload["stepId"] as? String ?? "", occurrence: payload["occurrence"] as? Int ?? 0, action: action == "guidance-done" ? "done" : "snooze")
+                case "alert":
+                    store.applyAlertNotificationAction(alertId: payload["alertId"] as? String ?? "", action: action == "alert-acknowledge" ? "acknowledge" : "snooze")
+                case "legacy-reminder":
+                    if action == "reminder-snooze" { store.snoozeCookReminder(payload["reminderId"] as? String ?? "") }
+                    else if action == "reminder-dismiss" { store.dismissCookReminder(payload["reminderId"] as? String ?? "") }
+                default: break
+                }
+            } else if payload["open"] as? Bool == true {
                 store.notificationCookId = payload["cookId"] as? String
                 // PL-02: occurrence ids are "<ruleId>:<sequence>" — route the
                 // tap to that rule's check-in.
                 if let occurrence = payload["occurrenceId"] as? String, let cut = occurrence.lastIndex(of: ":") { store.notificationReminderRuleId = String(occurrence[..<cut]) }
+                // PL-03 (#183): an alert tap lands on that alert; a legacy
+                // reminder tap lands on its check-in.
+                if kind == "alert" { store.notificationAlertId = payload["alertId"] as? String }
+                if kind == "legacy-reminder" { store.notificationLegacyReminderId = payload["reminderId"] as? String }
             }
         } }
         .modifier(RootPresentationModifier(telemetry: telemetry))
@@ -329,6 +386,10 @@ struct CookListView: View {
                 .padding(.bottom, 20)
             }
             .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
+            // PL-20 (#184): the list is top-level — no cook is open while
+            // it shows, so the crash-resume record clears here, following
+            // the selection the way Android's view model writes it.
+            .onAppear { if mealPath.isEmpty { CrashDiagnostics.shared.recordOpenCook(nil) } }
             .sheet(item: $startSetup) { setup in StartCookSheet(initialSetup: setup, onStarted: { mealPath.append($0) }) }
             .onChange(of: restoreRequested) { _, requested in
                 if requested { showingRestore = true; restoreRequested = false }
@@ -742,6 +803,7 @@ struct SettingsView: View {
     @State private var exportDocument = PitTechArchiveDocument(data: Data())
     @State private var archiveError: String?
     @State private var notificationsAllowed = false
+    @State private var savedCrashReport: DiagnosticReport?
 
     var body: some View {
         Group {
@@ -823,6 +885,18 @@ struct SettingsView: View {
                     Text("Tell us about a problem or suggest a feature without needing a GitHub account. Cook records and photos are never included.")
                         .font(.subheadline)
                     NavigationLink("Feedback & feature ideas") { NativeFeedbackView() }
+                    if let report = savedCrashReport {
+                        // PL-20 (#184): the saved report's standing notice,
+                        // Android's Settings copy — it is not sent unless
+                        // the user includes it in a problem report.
+                        Text("A crash report (\(report.referenceCode)) is saved on this phone. It is not sent unless you choose to include it in a problem report.")
+                            .font(.subheadline)
+                        Button("Delete saved crash report", role: .destructive) {
+                            CrashDiagnostics.shared.clearSavedReport()
+                            savedCrashReport = nil
+                        }
+                        .accessibilityIdentifier("settings-delete-crash-report")
+                    }
                 } header: { TurnInBannerText("Feedback") }
                 Section {
                     Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
@@ -851,6 +925,7 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .task { notificationsAllowed = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .authorized }
+            .onAppear { savedCrashReport = CrashDiagnostics.shared.savedReport() }
             .fileExporter(isPresented: $showingExport, document: exportDocument, contentType: .zip, defaultFilename: "PitTech-Cooks") { result in
                 if case .failure = result { archiveError = "PitTech couldn't save the backup to that location." }
             }

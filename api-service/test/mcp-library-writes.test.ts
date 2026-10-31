@@ -7,7 +7,8 @@ import { McpGrants, type McpGrantRecord, type McpGrantStore, type McpPrincipal }
 import { AuthSecrets, credential } from '../src/auth-credentials.ts';
 import { PrivateLibraryService, MCP_WRITER_CLIENT_ID, type SnapshotReadWriter } from '../src/mcp-library.ts';
 import { McpServer } from '../src/mcp-server.ts';
-import { syncEnvelope, syncTransition, type SyncEnvelope } from '../src/sync-envelope.ts';
+import { syncTransition, type SyncEnvelope } from '../src/sync-envelope.ts';
+import { privateLibraryEnvelope } from '../src/sync-projection.ts';
 
 const NOW = 1_800_000_000_000;
 class MemoryGrantStore implements McpGrantStore {
@@ -27,8 +28,12 @@ class MemoryGrantStore implements McpGrantStore {
 
 /** In-memory SnapshotReadWriter with PrivateSnapshots' contract: CAS on
  * baseVersion, durable receipts per mutationId, same-id/different-content
- * is retry_content_changed. Every put also runs the real envelope +
- * transition validators, so constructed envelopes are proven legal. */
+ * is retry_content_changed. Every put runs the production envelope
+ * validator (privateLibraryEnvelope — the exact function config.ts
+ * wires into PrivateSnapshots) plus the transition validator, so
+ * constructed envelopes are proven legal against real libraries
+ * (issues #227/#228: this fake previously skipped the projection
+ * validator and masked contract drift in the write tools). */
 class FakeSnapshots implements SnapshotReadWriter {
   version = 0; envelope: SyncEnvelope | null = null;
   private receipts = new Map<string, { hash: string; receipt: { version: number; mutationId: string; sha256: string } }>();
@@ -36,7 +41,7 @@ class FakeSnapshots implements SnapshotReadWriter {
   async status() { return { version: this.version, updatedAt: this.version ? NOW : null }; }
   async receiptFor(_user: string, mutationId: string) { return this.receipts.get(mutationId)?.receipt; }
   async put(_user: string, value: unknown) {
-    const next = syncEnvelope(value);
+    const next = privateLibraryEnvelope(value);
     const hash = digest(Buffer.from(stable(next)));
     const prior = this.receipts.get(next.mutationId);
     if (prior) {
@@ -308,22 +313,46 @@ test('companions + reminder rules: upsert/list/delete with per-kind scope enforc
   const s: Setup = await setup();
   const meal = await s.call('create_meal', { title: 'Planned cook' });
   const mealId = (meal.structuredContent as unknown as { mealId: string }).mealId;
-  const plan = await s.call('upsert_companion', { kind: 'plan', title: 'Saturday plan', mealId, payload: { draft: { dishes: [] }, dishIds: [] } });
+  // Plan/checklist documents in the shapes the library contract
+  // requires (version, name, steps — the loose shapes this test used
+  // before are rejected by production; see issues #227/#228).
+  const planDoc = { version: 1, name: 'Saturday plan', draft: { title: 'Saturday plan', dishes: [] }, steps: [], dishIds: [] };
+  const plan = await s.call('upsert_companion', { kind: 'plan', title: 'Saturday plan', mealId, payload: planDoc });
   // setup() principal lacks planning:write → the per-kind gate must refuse.
   assert.equal(plan.isError, true);
   assert.match(plan.content[0].text, /planning:write/);
   const planner: McpPrincipal = { grantId: 'g', userId: 'user-1', scopes: ['library:read', 'library:write', 'planning:write'] };
-  const plan2 = await s.call('upsert_companion', { kind: 'plan', title: 'Saturday plan', mealId, payload: { draft: { dishes: [] }, dishIds: [] } }, planner);
+  const plan2 = await s.call('upsert_companion', { kind: 'plan', title: 'Saturday plan', mealId, payload: planDoc }, planner);
   assert.equal(plan2.isError, false, plan2.content?.[0]?.text);
   const companionId = (plan2.structuredContent as unknown as { companionId: string }).companionId;
-  const checklist = await s.call('upsert_companion', { kind: 'checklist', title: 'Prep', mealId, payload: { items: [] } });
+  const checklist = await s.call('upsert_companion', { kind: 'checklist', title: 'Prep', mealId, payload: { version: 1, items: [] } });
   assert.equal(checklist.isError, false, checklist.content?.[0]?.text);
   const listed = await s.call('list_companions', { mealId });
   assert.equal((listed.structuredContent as unknown as { total: number }).total, 2);
   const badKind = await s.call('upsert_companion', { kind: 'recordings', title: 'X', payload: {} }, planner);
   assert.equal(badKind.isError, true);
+  // A temperature rule watches a recorded channel (both apps build
+  // probe rules the same way): seed the meal's food-probe channel
+  // the way a phone sync would deliver it.
+  const baseEnv = s.snapshots.envelope!;
+  await s.snapshots.put('user-1', { ...baseEnv, clientId: '123e4567-e89b-42d3-a456-426614174088', baseVersion: s.snapshots.version, mutationId: '223e4567-e89b-42d3-a456-426614174001', records: [...baseEnv.records,
+    { recordType: 'probes', recordId: 'probe-1', deleted: false, assetIds: [], version: { counter: 98, clientId: '123e4567-e89b-42d3-a456-426614174088' }, payload: { id: 'probe-1', cookId: mealId, name: 'Food probe', measurementType: 'food', source: 'recorded', createdAtUtcMillis: NOW } },
+    { recordType: 'readings', recordId: 'reading-1', deleted: false, assetIds: [], version: { counter: 98, clientId: '123e4567-e89b-42d3-a456-426614174088' }, payload: { id: 'reading-1', cookId: mealId, dishId: null, probeId: 'probe-1', probeName: 'Food probe', measurementType: 'food', value: 150, unit: '°F', measuredAtUtcMillis: NOW, recordedAtUtcMillis: NOW, timeZoneId: 'UTC', source: 'recorded', sourceDeviceId: 'dev-1', qualityStatus: 'valid', timestampBasis: 'measurement', samplingIntervalMillis: 15000 } }] });
   const rule = await s.call('upsert_reminder_rule', { mealId, kind: 'temperature', title: 'Probe alert', triggerConfig: { type: 'temperature', threshold: 203 } }, planner);
   assert.equal(rule.isError, false, rule.content?.[0]?.text);
+  // The friendly vocabulary is stored as the native probe shape on
+  // the derived channel (issue #228), committed through the real
+  // library validator.
+  const storedRule = s.snapshots.envelope!.records.find(r => r.recordType === 'reminderRules');
+  assert.ok(storedRule, 'reminder rule written');
+  assert.equal((storedRule!.payload as { kind: string }).kind, 'probe');
+  const storedTrigger = JSON.parse((storedRule!.payload as { triggerConfig: string }).triggerConfig) as Record<string, unknown>;
+  assert.equal(storedTrigger.version, 1);
+  assert.equal(storedTrigger.type, 'probe');
+  assert.equal(storedTrigger.thresholdF, 203);
+  assert.equal(storedTrigger.measurementType, 'food');
+  assert.equal(storedTrigger.direction, 'above');
+  assert.equal(storedTrigger.seriesId, [mealId, 'probe-1', 'dev-1', '', 'food', 'recorded'].join(':'));
   const mismatch = await s.call('upsert_reminder_rule', { mealId, kind: 'temperature', title: 'X', triggerConfig: { type: 'timer' } }, planner);
   assert.equal(mismatch.isError, true);
   const rules = await s.call('list_reminder_rules', { mealId });
@@ -458,13 +487,142 @@ test('recorded sensor samples refuse manual correction and removal', async () =>
   const s: Setup = await setup();
   const created = await s.call('create_meal', { title: 'Sensor cook' });
   const { mealId } = created.structuredContent as unknown as { mealId: string };
-  // Seed a recorded reading straight into the snapshot (a phone sync would bring it).
+  // Seed a recorded reading straight into the snapshot (a phone sync
+  // would bring it — including the probe record the reading's probeId
+  // references, which the library contract requires to exist).
   const base = s.snapshots.envelope!;
-  const seeded: SyncEnvelope = { ...base, clientId: '123e4567-e89b-42d3-a456-426614174099', baseVersion: s.snapshots.version, mutationId: '223e4567-e89b-42d3-a456-426614174000', records: [...base.records, { recordType: 'readings', recordId: 'sensor-1', deleted: false, assetIds: [], version: { counter: 99, clientId: '123e4567-e89b-42d3-a456-426614174099' }, payload: { id: 'sensor-1', cookId: mealId, dishId: null, probeId: 'probe-9', probeName: 'Pit probe', measurementType: 'pit', value: 250, unit: '°F', measuredAtUtcMillis: NOW, recordedAtUtcMillis: NOW, timeZoneId: 'UTC', source: 'recorded', sourceDeviceId: 'dev-1', qualityStatus: 'valid', timestampBasis: 'measurement', samplingIntervalMillis: 15000 } }] };
+  const seeded: SyncEnvelope = { ...base, clientId: '123e4567-e89b-42d3-a456-426614174099', baseVersion: s.snapshots.version, mutationId: '223e4567-e89b-42d3-a456-426614174000', records: [...base.records,
+    { recordType: 'probes', recordId: 'probe-9', deleted: false, assetIds: [], version: { counter: 99, clientId: '123e4567-e89b-42d3-a456-426614174099' }, payload: { id: 'probe-9', cookId: mealId, name: 'Pit probe', measurementType: 'pit', source: 'recorded', createdAtUtcMillis: NOW } },
+    { recordType: 'readings', recordId: 'sensor-1', deleted: false, assetIds: [], version: { counter: 99, clientId: '123e4567-e89b-42d3-a456-426614174099' }, payload: { id: 'sensor-1', cookId: mealId, dishId: null, probeId: 'probe-9', probeName: 'Pit probe', measurementType: 'pit', value: 250, unit: '°F', measuredAtUtcMillis: NOW, recordedAtUtcMillis: NOW, timeZoneId: 'UTC', source: 'recorded', sourceDeviceId: 'dev-1', qualityStatus: 'valid', timestampBasis: 'measurement', samplingIntervalMillis: 15000 } }] };
   await s.snapshots.put('user-1', seeded);
   const fix = await s.call('add_manual_reading', { mealId, readingId: 'sensor-1', probeName: 'Pit probe', measurementType: 'pit', value: 251, unit: '°F' });
   assert.equal(fix.isError, true);
   assert.match(fix.content[0].text, /recorded samples are immutable/);
   const remove = await s.call('remove_manual_reading', { readingId: 'sensor-1' });
   assert.equal(remove.isError, true);
+});
+
+test('composition regression (#227): duplicate + re-save write contract record shapes through the real validator', async () => {
+  const s: Setup = await setup();
+  const recipe = await s.call('create_recipe', {
+    name: 'Brisket method',
+    dish: { name: 'Brisket flat', foodType: 'beef', ingredients: [{ name: 'SPG', amountText: '2', amountUnit: 'tbsp' }] },
+    targets: [{ type: 'internal', value: 203, unit: '°F' }],
+  });
+  const recipeId = (recipe.structuredContent as unknown as { recipeId: string }).recipeId;
+  const composed = await s.call('compose_meal', { title: 'Game day', dishes: [{ recipeId }] });
+  assert.equal(composed.isError, false, composed.content?.[0]?.text);
+  const mealId = (composed.structuredContent as unknown as { mealId: string }).mealId;
+  // The composed cook itself carries the current contract shapes.
+  const composedCook = s.snapshots.envelope!.records.find(r => r.recordType === 'cooks' && r.recordId === mealId)!;
+  const cookPayload = composedCook.payload as Record<string, unknown>;
+  assert.equal(cookPayload.startedTimeZoneId, 'UTC');
+  assert.equal('smokerId' in cookPayload, false);
+  assert.equal('timeZoneId' in cookPayload, false);
+  const composedLifecycle = s.snapshots.envelope!.records.find(r => r.recordType === 'lifecycles' && r.recordId === mealId)!;
+  assert.deepEqual(Object.keys(composedLifecycle.payload as object).sort(), ['cookId', 'timingMode']);
+  // Duplicate: the copy's lifecycle is the contract shape too.
+  const dup = await s.call('duplicate_meal_setup', { mealId });
+  assert.equal(dup.isError, false, dup.content?.[0]?.text);
+  const dupId = (dup.structuredContent as unknown as { mealId: string }).mealId;
+  const dupLifecycle = s.snapshots.envelope!.records.find(r => r.recordType === 'lifecycles' && r.recordId === dupId)!;
+  assert.deepEqual(dupLifecycle.payload, { cookId: dupId, timingMode: 'legacy_preserved' });
+  // Save the composed dish as a recipe twice: the dish keeps exactly
+  // one source link (keyed by dishId), pointing at the latest save.
+  const dishId = (composed.structuredContent as unknown as { dishIds: string[] }).dishIds[0];
+  const first = await s.call('save_dish_as_recipe', { dishId });
+  assert.equal(first.isError, false, first.content?.[0]?.text);
+  const second = await s.call('save_dish_as_recipe', { dishId, name: 'Brisket, second save' });
+  assert.equal(second.isError, false, second.content?.[0]?.text);
+  const links = s.snapshots.envelope!.records.filter(r => r.recordType === 'dishRecipeSources' && !r.deleted);
+  assert.equal(links.length, 1);
+  assert.equal(links[0].recordId, dishId);
+  assert.equal((links[0].payload as { recipeId: string }).recipeId, (second.structuredContent as unknown as { recipeId: string }).recipeId);
+});
+
+test('reminder vocabulary regression (#228): friendly kinds translate to native triggers; native shapes pass through', async () => {
+  const s: Setup = await setup();
+  const planner: McpPrincipal = { grantId: 'g', userId: 'user-1', scopes: ['library:read', 'library:write', 'planning:write'] };
+  const meal = await s.call('create_meal', { title: 'Vocabulary cook' });
+  const mealId = (meal.structuredContent as unknown as { mealId: string }).mealId;
+  const stored = () => s.snapshots.envelope!.records.filter(r => r.recordType === 'reminderRules' && !r.deleted)
+    .map(r => ({ kind: (r.payload as { kind: string }).kind, trigger: JSON.parse((r.payload as { triggerConfig: string }).triggerConfig) as Record<string, unknown> }));
+  // elapsed → duration anchored at the meal's start.
+  const elapsed = await s.call('upsert_reminder_rule', { mealId, kind: 'elapsed', title: 'One hour in', triggerConfig: { type: 'elapsed', offsetMillis: 3600000 } }, planner);
+  assert.equal(elapsed.isError, false, elapsed.content?.[0]?.text);
+  // time with an absolute `at` → clock.
+  const clock = await s.call('upsert_reminder_rule', { mealId, kind: 'time', title: 'At four', triggerConfig: { type: 'time', at: NOW + 7200000 } }, planner);
+  assert.equal(clock.isError, false, clock.content?.[0]?.text);
+  // The native shape the staging pre-pass verified live, minus the
+  // version field (the handler injects it).
+  const native = await s.call('upsert_reminder_rule', { mealId, kind: 'duration', title: 'Native duration', triggerConfig: { type: 'duration', startedAt: NOW, delayMillis: 60000 } }, planner);
+  assert.equal(native.isError, false, native.content?.[0]?.text);
+  const rules = stored();
+  assert.equal(rules.length, 3);
+  assert.deepEqual(rules.find(r => r.kind === 'duration' && r.trigger.delayMillis === 3600000)?.trigger, { version: 1, type: 'duration', startedAt: NOW, delayMillis: 3600000 });
+  assert.deepEqual(rules.find(r => r.kind === 'clock')?.trigger, { version: 1, type: 'clock', at: NOW + 7200000 });
+  assert.deepEqual(rules.find(r => r.kind === 'duration' && r.trigger.delayMillis === 60000)?.trigger, { version: 1, type: 'duration', startedAt: NOW, delayMillis: 60000 });
+  // Temperature with an explicit channel works on a meal with no
+  // readings; without any channel the failure is an actionable
+  // message, never the library's invalid_private_library rejection.
+  const explicit = await s.call('upsert_reminder_rule', { mealId, kind: 'temperature', title: 'Pit watch', triggerConfig: { type: 'temperature', threshold: 275, measurementType: 'pit', seriesId: 'chan-1' } }, planner);
+  assert.equal(explicit.isError, false, explicit.content?.[0]?.text);
+  const probe = stored().find(r => r.kind === 'probe');
+  assert.equal(probe?.trigger.thresholdF, 275);
+  assert.equal(probe?.trigger.seriesId, 'chan-1');
+  const noChannel = await s.call('upsert_reminder_rule', { mealId, kind: 'temperature', title: 'No channel', triggerConfig: { type: 'temperature', threshold: 195 } }, planner);
+  assert.equal(noChannel.isError, true);
+  assert.match(noChannel.content[0].text, /no food readings yet/);
+  assert.doesNotMatch(noChannel.content[0].text, /invalid_private_library/);
+});
+
+test('undo regression (#227): delete_recipe undo reports the unrestorable source link; delete_meal undo restores links under copy identities', async () => {
+  const s: Setup = await setup();
+  const recipe = await s.call('create_recipe', {
+    name: 'Link stew',
+    dish: { name: 'Stew', foodType: 'beef', ingredients: [{ name: 'Salt', amountText: '1', amountUnit: 'tsp' }] },
+    targets: [{ type: 'internal', value: 200, unit: '°F' }],
+  });
+  const recipeId = (recipe.structuredContent as unknown as { recipeId: string }).recipeId;
+  const composed = await s.call('compose_meal', { title: 'Stew night', dishes: [{ recipeId }] });
+  const { mealId, dishIds } = composed.structuredContent as unknown as { mealId: string; dishIds: string[] };
+  const lastMutation = () => [...s.journal.entries.keys()].at(-1)!;
+  // Undoing delete_recipe restores the recipe + revisions; the
+  // source link's identity (the still-live dish) can never be
+  // resurrected, so it is reported, not silently dropped or written
+  // in a shape the validator rejects.
+  const del = await s.call('delete_recipe', { recipeId });
+  assert.equal(del.isError, false, del.content?.[0]?.text);
+  const undoDel = await s.call('undo_private_operation', { mutationId: lastMutation() });
+  assert.equal(undoDel.isError, false, undoDel.content?.[0]?.text);
+  const notRestored = (undoDel.structuredContent as unknown as { notRestored?: string[] }).notRestored ?? [];
+  assert.deepEqual(notRestored, [`dishRecipeSources|${dishIds[0]}`]);
+  const recipeBack = await s.call('get_recipe', { recipeId: (undoDel.structuredContent as unknown as { restoredAsCopies: { from: string; to: string }[] }).restoredAsCopies.find(c => c.from === recipeId)!.to });
+  assert.equal(recipeBack.isError, false, recipeBack.content?.[0]?.text);
+  // Undoing delete_meal (fresh library, link still live at delete
+  // time) restores the whole graph as copies: the lifecycle keys by
+  // the meal copy and the source link by the dish copy.
+  const s2: Setup = await setup();
+  const recipe2 = await s2.call('create_recipe', {
+    name: 'Link stew 2',
+    dish: { name: 'Stew', foodType: 'beef', ingredients: [{ name: 'Salt', amountText: '1', amountUnit: 'tsp' }] },
+    targets: [{ type: 'internal', value: 200, unit: '°F' }],
+  });
+  const recipe2Id = (recipe2.structuredContent as unknown as { recipeId: string }).recipeId;
+  const composed2 = await s2.call('compose_meal', { title: 'Stew night 2', dishes: [{ recipeId: recipe2Id }] });
+  const m2 = composed2.structuredContent as unknown as { mealId: string; dishIds: string[] };
+  const delMeal = await s2.call('delete_meal', { mealId: m2.mealId });
+  assert.equal(delMeal.isError, false, delMeal.content?.[0]?.text);
+  const undoMeal = await s2.call('undo_private_operation', { mutationId: [...s2.journal.entries.keys()].at(-1)! });
+  assert.equal(undoMeal.isError, false, undoMeal.content?.[0]?.text);
+  const copies = (undoMeal.structuredContent as unknown as { restoredAsCopies: { from: string; to: string }[] }).restoredAsCopies;
+  const mealCopy = copies.find(c => c.from === m2.mealId)!.to;
+  const dishCopy = copies.find(c => c.from === m2.dishIds[0] && c.to !== mealCopy);
+  const live = s2.snapshots.envelope!.records.filter(r => !r.deleted);
+  const lifecycleCopy = live.find(r => r.recordType === 'lifecycles' && r.recordId === mealCopy);
+  assert.ok(lifecycleCopy, 'lifecycle restored under the meal copy identity');
+  const linkCopies = live.filter(r => r.recordType === 'dishRecipeSources');
+  assert.equal(linkCopies.length, 1);
+  assert.equal(linkCopies[0].recordId, dishCopy!.to);
+  assert.equal((linkCopies[0].payload as { dishId: string }).dishId, dishCopy!.to);
 });

@@ -133,6 +133,9 @@ import UniformTypeIdentifiers
         let prior = library; library = next; save()
         if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
         telemetryOnLog?(draft.cookId)
+        // #183: Android's onEvent — a recorded action satisfies any
+        // matching planned guidance occurrence.
+        satisfyGuidanceFromEvent(draft.id)
         try discardDraft(draft.id)
     }
     func deleteNote(_ id: String) throws {

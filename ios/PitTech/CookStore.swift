@@ -17,6 +17,12 @@ final class CookStore {
     /// PL-02 (issue #172): the specific rule a tapped reminder notification
     /// was about, so its check-in — not just the cook — opens.
     var notificationReminderRuleId: String?
+    /// #183: the same route for a legacy cook reminder — its "How did it
+    /// go?" check-in opens, not just the cook.
+    var notificationLegacyReminderId: String?
+    /// #183 (PL-03): the alert a tapped alert notification was about, so
+    /// the Alerts surface opens at that rule.
+    var notificationAlertId: String?
     var publicCookDestination: String?
     /// PL-19 (issue #172): the public item whose recipes were just saved,
     /// so its Discover detail can offer "Open in Recipes" as the primary.
@@ -595,6 +601,11 @@ final class CookStore {
 
     func save() {
         let reminderSchedules = prepareReminderSchedules()
+        // #183: guidance + cook alerts reconcile on the same funnel —
+        // every data change re-evaluates them, like Android's reconcile
+        // calls riding its repository writes.
+        let guidanceSchedules = prepareGuidanceSchedules()
+        let alertSchedules = prepareCookAlertSchedules()
         do {
             let data = try JSONEncoder().encode(library)
             try data.write(to: storageURL, options: .atomic)
@@ -604,6 +615,8 @@ final class CookStore {
             try? fileURL.setResourceValues(values)
             saveError = nil
             submitReminderSchedules(reminderSchedules)
+            submitGuidanceSchedules(guidanceSchedules)
+            submitCookAlertSchedules(alertSchedules)
             onLibrarySaved?()
         } catch {
             saveError = ErrorCopy.saveChangeFailed
