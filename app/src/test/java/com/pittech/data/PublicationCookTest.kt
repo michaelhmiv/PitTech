@@ -32,10 +32,12 @@ class PublicationCookTest {
         .put("weatherNotes", "Clear").put("windNotes", "").put("notes", "Game day")
         .put("serveAtUtcMillis", start + 39_600_000).toString()
 
-    private fun observation(id: String, at: Long, action: String, title: String) = JSONObject()
+    // Observation offsets are anchor-relative in real stories; the snapshot
+    // codec rejects anything else, so the fixtures compute them honestly.
+    private fun observation(id: String, at: Long, anchor: Long, action: String, title: String) = JSONObject()
         .put("sourceEventId", id).put("occurredAtUtcMillis", at).put("timeZoneId", "UTC")
         .put("title", title).put("details", "").put("action", action)
-        .put("offsetMillis", JSONObject.NULL).put("recordedTemperatures", JSONArray())
+        .put("offsetMillis", at - anchor).put("recordedTemperatures", JSONArray())
 
     private fun reading(id: String, at: Long, type: String, value: Double) = JSONObject()
         .put("id", id).put("probeId", "probe-$id").put("probeName", if (type == "pit") "Pit probe" else "Food probe")
@@ -58,7 +60,7 @@ class PublicationCookTest {
             sourceDishId = "dish-1",
             snapshot = RecipeSnapshot("Brisket", DishDraft("Brisket", "Beef")),
             storyJson = story("dish-1", anchor,
-                listOf(observation("e1", anchor, "food_on", "Food on"), observation("e2", anchor + 7_200_000, "wrap", "Wrapped")),
+                listOf(observation("e1", anchor, anchor, "food_on", "Food on"), observation("e2", anchor + 7_200_000, anchor, "wrap", "Wrapped")),
                 listOf(reading("r1", anchor + 600_000, "pit", 250.0)),
                 listOf(result("wrap_material", "butcher_paper"), result("rub", "House rub"), result("spritz", "yes"), result("spritz_medium", "Apple juice"), result("overall_rating", numeric = 5.0), result("result_notes", "Great bark"))),
             includeStory = true,
@@ -71,7 +73,7 @@ class PublicationCookTest {
             sourceDishId = "dish-2",
             snapshot = RecipeSnapshot("Smoked potatoes", DishDraft("Smoked potatoes", "Potatoes")),
             storyJson = story("dish-2", anchor,
-                listOf(observation("e3", anchor, "food_on", "Food on"), observation("e4", anchor + 18_000_000, "remove", "Food off")),
+                listOf(observation("e3", anchor, anchor, "food_on", "Food on"), observation("e4", anchor + 18_000_000, anchor, "remove", "Food off")),
                 listOf(reading("r2", anchor + 600_000, "food", 200.0)),
                 listOf(result("overall_rating", numeric = 4.0))),
             includeStory = true,
@@ -124,7 +126,7 @@ class PublicationCookTest {
         val foreign = SharingEntry(
             sourceDishId = "dish-9",
             snapshot = RecipeSnapshot("Yesterday's ribs", DishDraft("Ribs", "Pork")),
-            storyJson = story("dish-9", anchor, listOf(observation("e9", anchor, "food_on", "Food on")), emptyList(), emptyList()),
+            storyJson = story("dish-9", anchor, listOf(observation("e9", anchor, anchor, "food_on", "Food on")), emptyList(), emptyList()),
             includeStory = true,
         )
         assertThrows(IllegalArgumentException::class.java) { PublicationProjection.build(document(listOf(brisket(), foreign)), 1, emptyList(), "cook") }
