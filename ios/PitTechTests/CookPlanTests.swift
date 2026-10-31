@@ -11,7 +11,7 @@ final class CookPlanTests: XCTestCase {
             draft: PlaybookCookDraft(title: "Test cook", dishes: [PlaybookDishDraft(name: "Brisket", foodType: "Beef")]),
             steps: [
                 PlaybookStep(id: "wrap", dishIndex: 0, action: "wrap", title: "Wrap", instructions: "Paper.", trigger: "elapsed", minutes: 30),
-                PlaybookStep(id: "rest", dishIndex: 0, action: "rest", title: "Rest", trigger: "manual"),
+                PlaybookStep(id: "rest", dishIndex: 0, action: "rest_start", title: "Rest", trigger: "manual"),
             ])
     }
 

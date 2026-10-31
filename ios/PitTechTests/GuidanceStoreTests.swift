@@ -19,7 +19,7 @@ import XCTest
             draft: PlaybookCookDraft(title: "Guidance cook", dishes: [PlaybookDishDraft(name: "Brisket", foodType: "Beef")]),
             steps: [
                 PlaybookStep(id: "wrap", dishIndex: 0, action: "wrap", title: "Wrap when bark sets", instructions: "Wrap in butcher paper.", trigger: "elapsed", minutes: 30),
-                PlaybookStep(id: "rest", dishIndex: 0, action: "rest", title: "Rest the brisket", instructions: "Rest in a cooler.", trigger: "manual"),
+                PlaybookStep(id: "rest", dishIndex: 0, action: "rest_start", title: "Rest the brisket", instructions: "Rest in a cooler.", trigger: "manual"),
             ])
         let plan = CookPlan(book: book, dishIds: [dishId])
         store.library.companionRecords.append(.object([
@@ -43,8 +43,12 @@ import XCTest
         let events = store.library.events.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId }
         let written = try XCTUnwrap(events.first { $0["title"]?.stringValue == "Wrap when bark sets" })
         XCTAssertEqual(written["details"]?.stringValue, "Wrap in butcher paper.")
-        // A stale completion (same occurrence) is refused.
-        XCTAssertThrowsError(try store.completeGuidanceStep(cookId: cookId, evaluated: wrap))
+        // A stale completion (same occurrence) is a silent no-op, like
+        // Android's completeStep: no second event, progress untouched.
+        let eventsBefore = store.library.events.count
+        try store.completeGuidanceStep(cookId: cookId, evaluated: wrap)
+        XCTAssertEqual(store.library.events.count, eventsBefore)
+        XCTAssertEqual(store.guidancePlan(cookId: cookId)?.progress["wrap"]?.eventIds.count, 1)
     }
 
     func testTimelineActionSatisfiesStepOnItsOwn() throws {
@@ -76,12 +80,13 @@ import XCTest
         XCTAssertTrue(store.evaluatedGuidance(cookId: cookId).allSatisfy { !$0.ready })
     }
 
-    func testRestCompletionAlsoStartsTheRest() throws {
+    func testRestStepCompletionRecordsRestStart() throws {
         let (store, cookId, _, folder) = try makeStore()
         defer { try? FileManager.default.removeItem(at: folder) }
         let rest = try XCTUnwrap(store.evaluatedGuidance(cookId: cookId).first { $0.step.id == "rest" })
-        try store.completeGuidanceStep(cookId: cookId, evaluated: rest, rest: true)
+        try store.completeGuidanceStep(cookId: cookId, evaluated: rest)
         XCTAssertEqual(store.guidancePlan(cookId: cookId)?.progress["rest"]?.status, "done")
+        // The step's own event carries its action: the dish is resting.
         XCTAssertTrue(store.library.actions(for: cookId).contains { $0.action == "rest_start" })
     }
 }

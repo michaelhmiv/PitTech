@@ -90,7 +90,8 @@ final class CrashDiagnosticsTests: XCTestCase {
         let bare = CrashDiagnosticsCore.exceptionReport(name: "SIGSEGVException", reason: nil, stack: [], threadName: "main", now: 0)
         XCTAssertEqual(bare.summary, "SIGSEGVException")
         let longReason = CrashDiagnosticsCore.exceptionReport(name: "E", reason: String(repeating: "x", count: 400), stack: [], threadName: "main", now: 0)
-        XCTAssertEqual(longReason.summary.count, 2 + 300)
+        // The 300 cap applies to the reason; the summary is name + ": " + reason.
+        XCTAssertEqual(longReason.summary.count, 1 + 2 + 300)
     }
 
     func testSessionThatNeverStoodDownLeavesASynthesizedReport() {

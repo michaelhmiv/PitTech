@@ -104,7 +104,7 @@ struct ScreenshotTextSize: ViewModifier {
                 draft: PlaybookCookDraft(title: "Guidance brisket", dishes: [PlaybookDishDraft(name: "Brisket", foodType: "Beef")]),
                 steps: [
                     PlaybookStep(id: "ui-step-wrap", dishIndex: 0, action: "wrap", title: "Wrap when bark sets", instructions: "Wrap in butcher paper.", trigger: "elapsed", minutes: 30),
-                    PlaybookStep(id: "ui-step-rest", dishIndex: 0, action: "rest", title: "Rest the brisket", instructions: "Rest in a cooler.", trigger: "manual"),
+                    PlaybookStep(id: "ui-step-rest", dishIndex: 0, action: "rest_start", title: "Rest the brisket", instructions: "Rest in a cooler.", trigger: "manual"),
                 ])
             let plan = CookPlan(book: book, dishIds: [dish.id])
             library.companionRecords.append(.object([
