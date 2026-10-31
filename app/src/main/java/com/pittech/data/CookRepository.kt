@@ -84,7 +84,7 @@ class CookRepository(
         dao.observeAllSensorReadings(),
         dao.observeAllResults(),
         dao.observeConnectionGaps(),
-    ) { cooks, readings, results, gaps -> InsightsSnapshot(cooks, readings, results, gaps) }, dao.observeAllIngredients()) { snapshot, ingredients -> snapshot.copy(ingredients = ingredients) }
+    ) { cooks, readings, results, gaps -> InsightsSnapshot(cooks, readings, results, gaps) }, dao.observeAllIngredients(), dao.observeAllTargets()) { snapshot, ingredients, targets -> snapshot.copy(ingredients = ingredients, targets = targets) }
 
     /**
      * Starts a cook from a reviewed [NewCookDraft].

@@ -31,6 +31,10 @@ import kotlin.math.abs
 @Composable
 fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = Modifier,
     cookNames: Map<String, String> = emptyMap(), cookStartTimes: Map<String, Long> = emptyMap(), dishNames: Map<String, String> = emptyMap(),
+    // Flowing Slice 6 (Spread 05, 5.1): per-cook display offsets for the
+    // compare alignment stepper — added to a cook's elapsed axis only;
+    // recorded times are never altered. Default empty everywhere else.
+    cookOffsetMillis: Map<String, Long> = emptyMap(),
     markers: List<TimelineEventEntity> = emptyList(), onMarker: ((TimelineEventEntity) -> Unit)? = null, chartHeight: Dp = 260.dp,
     connectionGaps: List<TimelineEventEntity> = emptyList(), displayUnit: String? = null,
     targets: List<TargetEntity> = emptyList(), targetHistory: List<TargetHistory> = emptyList(),
@@ -60,7 +64,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
     val firstTime = valid.minOfOrNull { it.measuredAtUtcMillis } ?: markers.minOfOrNull { it.occurredAtUtcMillis } ?: System.currentTimeMillis()
     fun anchor(cookId: String): Long = if (cookNames.size > 1) cookStartTimes[cookId] ?: firstTime else
         plans.filter { it.action == "food_on" && (selectedDish == null || it.dishId == null || it.dishId == selectedDish) }.minOfOrNull { it.at } ?: cookStartTimes[cookId] ?: firstTime
-    fun x(cookId: String, time: Long) = if (clockMode && cookNames.size <= 1) time.toDouble() else (time - anchor(cookId)).toDouble()
+    fun x(cookId: String, time: Long) = if (clockMode && cookNames.size <= 1) time.toDouble() else (time - anchor(cookId) + (cookOffsetMillis[cookId] ?: 0L)).toDouble()
     fun y(value: Double, rawUnit: String) = CookTelemetryPolicy.convert(value, rawUnit, unit)
     fun label(r: SensorReadingEntity) = listOfNotNull(cookNames[r.cookId], r.probeName, r.dishId?.let { dishNames[it] }, r.measurementType.replace('_', ' '), referenceMatches[r.id]?.let { key -> readings.firstOrNull { TemperaturePlot.identity(it) == key }?.let { "matched to ${it.probeName}" } }).joinToString(" · ")
     val rawSegments = remember(readings, markers, connectionGaps) { TemperaturePlot.segments(readings, markers + connectionGaps) }
