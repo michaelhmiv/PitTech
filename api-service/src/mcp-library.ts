@@ -522,7 +522,7 @@ export class PrivateLibraryService {
         {
           name: 'compose_meal', title: 'Compose a meal',
           description: 'Creates a meal from a mix of saved recipes and plain dish descriptions. Recipe dishes bring their ingredients, targets and a source link to the exact revision used. Nothing is scaled or silently saved as new recipes.',
-          inputSchema: { type: 'object', properties: { title: { type: 'string' }, smokerName: { type: 'string' }, dishes: { type: 'array', items: { type: 'object' } }, ...WRITE_ARGS }, required: ['dishes'], additionalProperties: false },
+          inputSchema: { type: 'object', properties: { title: { type: 'string' }, smokerName: { type: 'string' }, notes: { type: 'string' }, fuelType: { type: 'string' }, woodOrPelletBlend: { type: 'string' }, timeZoneId: { type: 'string', description: 'IANA time zone for the start time; defaults to UTC.' }, dishes: { type: 'array', items: { type: 'object' } }, ...WRITE_ARGS }, required: ['dishes'], additionalProperties: false },
           scopes: ['library:write'],
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.composeMeal(principal, args),
         },
@@ -654,7 +654,7 @@ export class PrivateLibraryService {
         },
         {
           name: 'upsert_reminder_rule', title: 'Create or update a reminder rule',
-          description: 'Creates or updates a reminder rule for a meal. triggerConfig.type must match kind. The rule syncs to the user\'s devices; turning it on there is always the user\'s action.',
+          description: 'Creates or updates a reminder rule for a meal. triggerConfig.type must match kind. Friendly kinds are translated to the shapes the apps store: kind "temperature" with triggerConfig {type:"temperature", threshold:195} (optional direction "above"|"below", measurementType, seriesId) becomes a probe rule on a recorded channel of the meal; kind "elapsed" or "time" with {offsetMillis} (or delayMillis / minutes) becomes a duration rule anchored at the meal\'s start; "time" with {at} becomes a clock rule. The native kinds duration / clock / action / historical / probe are also accepted directly (version is added for you). The result reports the stored kind and triggerConfig. The rule syncs to the user\'s devices; turning it on there is always the user\'s action.',
           inputSchema: { type: 'object', properties: { ruleId: { type: 'string' }, mealId: { type: 'string' }, dishId: { type: 'string' }, kind: { type: 'string' }, title: { type: 'string' }, triggerConfig: { type: 'object' }, ...WRITE_ARGS }, required: ['mealId', 'kind', 'title', 'triggerConfig'], additionalProperties: false },
           scopes: ['planning:write'],
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.upsertReminderRule(principal, args),
@@ -1109,6 +1109,7 @@ export class PrivateLibraryService {
       let tombstoned = 0;
       const eventIds = new Set(work.liveRecords('events').filter(r => r.cookId === mealId).map(r => str(r.id)));
       const readingIds = new Set(work.liveRecords('readings').filter(r => r.cookId === mealId).map(r => str(r.id)));
+      const dishIds = new Set(work.liveRecords('dishes').filter(r => r.cookId === mealId).map(r => str(r.id)));
       for (const type of ['dishes', 'ingredients', 'targets', 'targetHistory', 'results', 'events', 'readings', 'photos', 'devices', 'probes', 'reminderRules'] as const) {
         for (const row of work.liveRecords(type).filter(r => r.cookId === mealId)) { work.tombstone(type, row); tombstoned++; }
       }
@@ -1116,6 +1117,11 @@ export class PrivateLibraryService {
         if (eventIds.has(str(link.eventId) ?? '') || readingIds.has(str(link.readingId) ?? '')) { work.tombstone('logReadingLinks', link); tombstoned++; }
       }
       for (const lifecycle of work.liveRecords('lifecycles').filter(r => r.cookId === mealId)) { work.tombstone('lifecycles', lifecycle); tombstoned++; }
+      // Source links key by dishId (no cookId of their own): they
+      // must go with their dishes, or the surviving live link's dish
+      // reference dangles and the library validator rejects the
+      // delete at commit (issue #227).
+      for (const link of work.liveRecords('dishRecipeSources').filter(r => dishIds.has(str(r.dishId) ?? ''))) { work.tombstone('dishRecipeSources', link); tombstoned++; }
       for (const companion of work.liveRecords('companionRecords').filter(r => r.cookId === mealId)) { work.tombstone('companionRecords', companion); tombstoned++; }
       work.tombstone('cooks', meal); tombstoned++;
       return { mealId, tombstonedRecords: tombstoned };
@@ -1168,6 +1174,9 @@ export class PrivateLibraryService {
       for (const type of ['ingredients', 'targets', 'targetHistory', 'results'] as const) {
         for (const row of work.liveRecords(type).filter(r => r.dishId === dishId)) { work.tombstone(type, row); tombstoned++; }
       }
+      // The dish's recipe source link keys by dishId and references
+      // the dish: it must go too, or the delete dangles (issue #227).
+      for (const link of work.liveRecords('dishRecipeSources').filter(r => r.dishId === dishId)) { work.tombstone('dishRecipeSources', link); tombstoned++; }
       work.tombstone('dishes', dish); tombstoned++;
       return { dishId, tombstonedRecords: tombstoned };
     });
@@ -1613,7 +1622,14 @@ export class PrivateLibraryService {
         createdAtUtcMillis: now, changeNotes: this.optString(args, 'changeNotes') ?? 'Saved from a dish by your AI assistant',
         sourceCookId: str(dish.cookId) ?? null, sourceDishId: str(dish.id) ?? null,
       });
-      work.insert('dishRecipeSources', { dishId: dish.id, recipeId, recipeRevisionId: revisionId, appliedAtUtcMillis: now }, dish.id + ':' + recipeId);
+      // Source links are keyed by dishId in the projection contract
+      // (one link per dish): re-saving a dish replaces its link rather
+      // than adding a second row under a composite id the contract
+      // rejects at commit (issue #227).
+      const link = { dishId: dish.id as string, recipeId, recipeRevisionId: revisionId, appliedAtUtcMillis: now };
+      const existingLink = work.liveRecords('dishRecipeSources').find(r => r.dishId === dish.id);
+      if (existingLink) work.update('dishRecipeSources', existingLink, link);
+      else work.insert('dishRecipeSources', link);
       return { recipeId, revisionId, dishId: dish.id };
     }, args => ({ recipeId: this.idFor(args, 'recipe'), revisionId: this.idFor(args, 'revision:1') }));
   }
@@ -1630,10 +1646,12 @@ export class PrivateLibraryService {
         status: 'active', startedAtUtcMillis: now, endedAtUtcMillis: null,
         createdAtUtcMillis: now, updatedAtUtcMillis: now,
       });
+      // The projection contract's lifecycle shape is {cookId,
+      // timingMode} only (issue #227); preserve the source meal's
+      // timing mode, defaulting like create_meal.
+      const sourceLifecycle = work.liveRecords('lifecycles').find(r => r.cookId === meal.id);
       work.insert('lifecycles', {
-        cookId: mealId, state: 'in_progress', weatherJson: null, snapshotJson: null,
-        legacyRating: null, legacyOutcome: null, legacyVisibility: null, legacySpotType: null,
-        savedRecipeId: null, updatedAtUtcMillis: now,
+        cookId: mealId, timingMode: sourceLifecycle?.timingMode === 'explicit_phases' ? 'explicit_phases' : 'legacy_preserved',
       }, mealId, []);
       const dishes = work.liveRecords('dishes').filter(r => r.cookId === meal.id);
       const dishIds: string[] = [];
@@ -2012,24 +2030,35 @@ export class PrivateLibraryService {
       });
     }
     if (extras?.recipeId && extras?.revisionId) {
-      work.insert('dishRecipeSources', { dishId, recipeId: extras.recipeId, recipeRevisionId: extras.revisionId, appliedAtUtcMillis: now }, dishId + ':' + extras.recipeId);
+      work.insert('dishRecipeSources', { dishId, recipeId: extras.recipeId, recipeRevisionId: extras.revisionId, appliedAtUtcMillis: now });
     }
     return dishId;
   }
 
   async composeMeal(principal: McpPrincipal, args: Record<string, unknown>) {
-    this.requireFields(args, ['title', 'smokerName', 'dishes', 'idempotencyKey', 'expectedSnapshotVersion']);
+    this.requireFields(args, ['title', 'smokerName', 'notes', 'fuelType', 'woodOrPelletBlend', 'timeZoneId', 'dishes', 'idempotencyKey', 'expectedSnapshotVersion']);
     if (!Array.isArray(args.dishes) || !args.dishes.length || args.dishes.length > 20) throw new ToolFailure('dishes must be an array of 1 to 20 entries, each naming a recipeId or a name + foodType.');
     return this.mutateAs('compose_meal', principal, args, work => {
       const now = this.clock();
       const mealId = this.idFor(args, 'meal');
       const title = this.optString(args, 'title') ?? 'Composed cook';
+      // Same record shapes create_meal writes: the projection
+      // contract requires startedTimeZoneId on cooks and allows only
+      // {cookId, timingMode} on lifecycles (issue #227).
       work.insert('cooks', {
-        id: mealId, title, smokerName: this.optString(args, 'smokerName') ?? null,
-        smokerId: null, status: 'active', startedAtUtcMillis: now, endedAtUtcMillis: null,
-        createdAtUtcMillis: now, updatedAtUtcMillis: now, timeZoneId: 'UTC',
+        id: mealId, title, status: 'active',
+        startedAtUtcMillis: now, startedTimeZoneId: this.optString(args, 'timeZoneId') ?? 'UTC',
+        endedAtUtcMillis: null,
+        smokerName: this.optString(args, 'smokerName') ?? null,
+        initialSetpointValue: null, initialSetpointUnit: null,
+        notes: this.optString(args, 'notes') ?? null,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now,
+        fuelType: this.optString(args, 'fuelType') ?? null,
+        woodOrPelletBlend: this.optString(args, 'woodOrPelletBlend') ?? null,
+        outdoorTemperatureValue: null, outdoorTemperatureUnit: null,
+        weatherNotes: null, windNotes: null,
       });
-      work.insert('lifecycles', { cookId: mealId, state: 'legacy_preserved', weatherJson: null, snapshotJson: null, legacyRating: null, legacyOutcome: null, legacyVisibility: null, legacySpotType: null, savedRecipeId: null, updatedAtUtcMillis: now }, mealId, []);
+      work.insert('lifecycles', { cookId: mealId, timingMode: 'legacy_preserved' }, mealId);
       const dishIds: string[] = [];
       (args.dishes as Record<string, unknown>[]).forEach((entry, index) => {
         const spec = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
@@ -2144,30 +2173,121 @@ export class PrivateLibraryService {
     };
   }
 
+  /** Translates the friendly reminder vocabulary into the native
+   * trigger shapes the library contract stores (issue #228). The
+   * contract's trigger cases are duration / clock / action /
+   * historical / probe, each carrying version: 1, and a rule's kind
+   * must equal its trigger's type — the friendly kinds temperature /
+   * elapsed / time can never satisfy that as-is, so they are mapped
+   * here: temperature → probe, elapsed/time → duration (or clock
+   * when an absolute `at` is given). Native kinds pass through with
+   * the version injected and unknown fields dropped, so what commits
+   * is always a shape the apps themselves write. */
+  private nativeTrigger(work: WorkingLibrary, meal: Payload, dishId: string | null, kindIn: string, cfg: Record<string, unknown>): { kind: string; trigger: Record<string, unknown> } {
+    const typeIn = typeof cfg.type === 'string' ? cfg.type : kindIn;
+    const mapType = (t: string): string | null => {
+      switch (t) {
+        case 'temperature': return 'probe';
+        case 'elapsed': return 'duration';
+        case 'time': return (typeof cfg.at === 'number' && cfg.offsetMillis === undefined && cfg.delayMillis === undefined && cfg.minutes === undefined) ? 'clock' : 'duration';
+        case 'duration': case 'clock': case 'action': case 'historical': case 'probe': return t;
+        default: return null;
+      }
+    };
+    const kind = mapType(kindIn); const cfgKind = mapType(typeIn);
+    if (!kind || !cfgKind) throw new ToolFailure(`Unknown reminder kind "${!kind ? kindIn : typeIn}". Supported kinds: temperature, elapsed, time, duration, clock, action, historical, probe.`);
+    if (kind !== cfgKind) throw new ToolFailure('triggerConfig.type must match kind (the library enforces this too).');
+    const int = (v: unknown): number | undefined => typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : undefined;
+    switch (kind) {
+      case 'duration': {
+        const delayMillis = int(cfg.delayMillis ?? cfg.offsetMillis) ?? (typeof cfg.minutes === 'number' && Number.isFinite(cfg.minutes) ? Math.trunc(cfg.minutes * 60000) : undefined);
+        if (delayMillis === undefined) throw new ToolFailure('A duration rule needs triggerConfig.delayMillis (or offsetMillis / minutes).');
+        if (delayMillis < 1 || delayMillis > 2_592_000_000) throw new ToolFailure('delayMillis must be between 1 and 2592000000 (30 days).');
+        const startedAt = int(cfg.startedAt) ?? int(meal.startedAtUtcMillis) ?? this.clock();
+        if (startedAt <= 0) throw new ToolFailure('A duration rule needs a positive startedAt anchor (the meal start is used when the meal has one).');
+        return { kind, trigger: { version: 1, type: 'duration', startedAt, delayMillis } };
+      }
+      case 'clock': {
+        const at = int(cfg.at);
+        if (at === undefined || at <= 0) throw new ToolFailure('A clock rule needs triggerConfig.at (epoch millis).');
+        return { kind, trigger: { version: 1, type: 'clock', at } };
+      }
+      case 'action': {
+        const action = typeof cfg.action === 'string' && cfg.action ? cfg.action : null;
+        if (!action) throw new ToolFailure('An action rule needs triggerConfig.action (the recorded action to anchor on).');
+        return { kind, trigger: { version: 1, type: 'action', action, offsetMillis: int(cfg.offsetMillis) ?? 0, eventId: typeof cfg.eventId === 'string' ? cfg.eventId : null } };
+      }
+      case 'historical': {
+        const anchorAction = typeof cfg.anchorAction === 'string' && cfg.anchorAction ? cfg.anchorAction : null;
+        if (!anchorAction) throw new ToolFailure('A historical rule needs triggerConfig.anchorAction.');
+        return { kind, trigger: { version: 1, type: 'historical', anchorAction, offsetMillis: int(cfg.offsetMillis) ?? 0 } };
+      }
+      case 'probe': {
+        const thresholdF = typeof cfg.thresholdF === 'number' && Number.isFinite(cfg.thresholdF) ? cfg.thresholdF : typeof cfg.threshold === 'number' && Number.isFinite(cfg.threshold) ? cfg.threshold : undefined;
+        if (thresholdF === undefined) throw new ToolFailure('A temperature rule needs triggerConfig.threshold (or thresholdF).');
+        const direction = cfg.direction === undefined ? 'above' : cfg.direction;
+        if (direction !== 'above' && direction !== 'below') throw new ToolFailure('direction must be "above" or "below".');
+        const measurementType = typeof cfg.measurementType === 'string' ? cfg.measurementType : 'food';
+        if (!['food', 'food_probe', 'internal_temperature', 'pit', 'pit_ambient', 'ambient_temperature'].includes(measurementType)) {
+          throw new ToolFailure(`measurementType "${measurementType}" is not a channel the apps watch (food, food_probe, internal_temperature, pit, pit_ambient, ambient_temperature).`);
+        }
+        const sustainMillis = int(cfg.sustainMillis) ?? 0;
+        if (sustainMillis < 0 || sustainMillis > 3_600_000) throw new ToolFailure('sustainMillis must be between 0 and 3600000.');
+        const repeatMillis = cfg.repeatMillis === undefined || cfg.repeatMillis === null ? null : int(cfg.repeatMillis);
+        if (repeatMillis !== null && (repeatMillis === undefined || repeatMillis < 300_000)) throw new ToolFailure('repeatMillis must be at least 300000 (5 minutes) when given.');
+        const hysteresisF = typeof cfg.hysteresisF === 'number' && Number.isFinite(cfg.hysteresisF) ? cfg.hysteresisF : 3.0;
+        if (hysteresisF < 0.5 || hysteresisF > 50) throw new ToolFailure('hysteresisF must be between 0.5 and 50.');
+        // A probe rule watches one recorded channel (the apps build
+        // the same identity from a reading's parts). Prefer the
+        // caller's seriesId; otherwise derive the channel from the
+        // meal's latest matching reading.
+        let seriesId = typeof cfg.seriesId === 'string' && cfg.seriesId.trim() ? cfg.seriesId : null;
+        let probeId = typeof cfg.probeId === 'string' ? cfg.probeId : null;
+        if (!seriesId) {
+          const readings = work.liveRecords('readings')
+            .filter(r => r.cookId === meal.id && r.measurementType === measurementType && (dishId === null || r.dishId === dishId || r.dishId === null))
+            .sort((a, b) => (num(b.measuredAtUtcMillis) ?? 0) - (num(a.measuredAtUtcMillis) ?? 0));
+          const latest = readings[0];
+          if (!latest) throw new ToolFailure(`A temperature rule needs a probe channel to watch, and this meal has no ${measurementType} readings yet. Record readings first, or pass triggerConfig.seriesId for a channel you know.`);
+          seriesId = [String(meal.id), String(latest.probeId ?? latest.probeName ?? ''), String(latest.sourceDeviceId ?? ''), String(latest.dishId ?? ''), measurementType, String(latest.source ?? '')].join(':');
+          probeId = probeId ?? (typeof latest.probeId === 'string' ? latest.probeId : null);
+        }
+        return { kind, trigger: { version: 1, type: 'probe', seriesId, probeId, measurementType, direction, thresholdF, sustainMillis, repeatMillis, hysteresisF } };
+      }
+      default: throw new ToolFailure(`Unsupported reminder kind "${kind}".`);
+    }
+  }
+
   async upsertReminderRule(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['ruleId', 'mealId', 'dishId', 'kind', 'title', 'triggerConfig', 'idempotencyKey', 'expectedSnapshotVersion']);
-    const kind = this.optString(args, 'kind');
+    const kindIn = this.optString(args, 'kind');
     const title = this.optString(args, 'title');
-    if (!kind || !title?.trim()) throw new ToolFailure('kind and title are required.');
+    if (!kindIn || !title?.trim()) throw new ToolFailure('kind and title are required.');
     if (typeof args.triggerConfig !== 'object' || args.triggerConfig === null || Array.isArray(args.triggerConfig)) throw new ToolFailure('triggerConfig must be an object.');
-    if ((args.triggerConfig as Record<string, unknown>).type !== kind) throw new ToolFailure('triggerConfig.type must match kind (the library enforces this too).');
+    const cfg = args.triggerConfig as Record<string, unknown>;
     return this.mutateAs('upsert_reminder_rule', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
+      const dishId = typeof args.dishId === 'string' ? args.dishId : null;
+      if (dishId !== null) {
+        const dish = work.live('dishes', dishId, 'Dish');
+        if (dish.cookId !== meal.id) throw new ToolFailure('That dish belongs to a different meal.');
+      }
       const now = this.clock();
-      const triggerConfig = JSON.stringify(args.triggerConfig);
+      const { kind, trigger } = this.nativeTrigger(work, meal, dishId, kindIn, cfg);
+      const triggerConfig = JSON.stringify(trigger);
       if (typeof args.ruleId === 'string') {
         const existing = work.live('reminderRules', args.ruleId, 'Reminder rule');
         work.update('reminderRules', existing, { kind, title: title.trim(), triggerConfig, updatedAtUtcMillis: now });
-        return { ruleId: existing.id, created: false };
+        return { ruleId: existing.id, created: false, kind, triggerConfig: trigger };
       }
       const ruleId = this.idFor(args, 'rule');
       work.insert('reminderRules', {
-        id: ruleId, cookId: meal.id, dishId: typeof args.dishId === 'string' ? args.dishId : null,
+        id: ruleId, cookId: meal.id, dishId,
         kind, title: title.trim(), triggerConfig, schemaVersion: 1,
         sourceMilestoneId: null, sourceRecipeRevisionId: null,
         createdAtUtcMillis: now, updatedAtUtcMillis: now,
       });
-      return { ruleId, created: true };
+      return { ruleId, created: true, kind, triggerConfig: trigger };
     }, args => (typeof args.ruleId === 'string' ? { ruleId: args.ruleId } : { ruleId: this.idFor(args, 'rule') }));
   }
 
@@ -2272,9 +2392,17 @@ export class PrivateLibraryService {
       // references between restored records remapped.
       const copies = new Map<string, string>();
       const splitKey = (key: string) => { const cut = key.indexOf('|'); return { type: key.slice(0, cut), recordId: key.slice(cut + 1) }; };
+      // Record types whose identity IS a parent record's id (the
+      // projection contract keys them by that field): lifecycles by
+      // cookId, logReadingLinks by readingId, dishRecipeSources by
+      // dishId. Their copies follow the parent's copy identity, so
+      // they get no fresh id of their own here (one would also poison
+      // value-based remapping, which matches on recordId).
+      const KEY_PARENT: Record<string, string> = { lifecycles: 'cooks', logReadingLinks: 'readings', dishRecipeSources: 'dishes' };
       for (const { key, record } of entry.before) {
         if (!record || record.deleted) continue;
         const { type, recordId } = splitKey(key);
+        if (KEY_PARENT[type]) continue;
         const current = work.currentRow(type, recordId);
         if (current?.deleted) copies.set(key, this.idFor({ idempotencyKey: args.idempotencyKey ?? mutationId }, 'undo-copy:' + key));
       }
@@ -2285,21 +2413,40 @@ export class PrivateLibraryService {
         return value;
       };
       const restoredAsCopies: { from: string; to: string }[] = [];
+      const notRestored: string[] = [];
       for (const { key, record } of entry.before) {
         const { type, recordId } = splitKey(key);
         if (record === null) { work.restoreExact(type, recordId, null); continue; }
         if (record.deleted) continue; // was already deleted before; still is
-        const newId = copies.get(key);
-        if (!newId) { work.restoreExact(type, recordId, record); continue; }
+        if (work.currentRow(type, recordId)?.deleted !== true) { work.restoreExact(type, recordId, record); continue; }
+        // The record is currently a tombstone: it returns only as a
+        // copy under a fresh identity (sync_restore_requires_new_identity).
         const payload: Payload = {};
         for (const [field, value] of Object.entries(record.payload as Payload)) payload[field] = remap(value);
-        const keyField = type === 'lifecycles' ? 'cookId' : type === 'logReadingLinks' ? 'readingId' : type === 'dishRecipeSources' ? 'dishId' : 'id';
-        payload[keyField] = newId;
-        const override = type === 'dishRecipeSources' ? `${String(payload.dishId)}:${String(payload.recipeId)}` : undefined;
-        work.insert(type, payload, override, [...record.assetIds]);
+        const parentType = KEY_PARENT[type];
+        if (parentType) {
+          // Keyed-by-parent records (see KEY_PARENT above): the copy
+          // can only exist under the parent copy's identity — any
+          // other key field value points at a record that does not
+          // exist and the library validator rejects the commit
+          // (issue #227). When the parent itself was not deleted, the
+          // tombstoned identity can never be resurrected and no other
+          // identity is legal — report it instead of writing a broken
+          // record.
+          const parentCopy = copies.get(parentType + '|' + recordId);
+          if (!parentCopy) { notRestored.push(key); continue; }
+          payload[KEY_FIELDS[type]] = parentCopy;
+          work.insert(type, payload, undefined, [...record.assetIds]);
+          restoredAsCopies.push({ from: recordId, to: parentCopy });
+          continue;
+        }
+        const newId = copies.get(key);
+        if (!newId) { notRestored.push(key); continue; }
+        payload.id = newId;
+        work.insert(type, payload, undefined, [...record.assetIds]);
         restoredAsCopies.push({ from: recordId, to: newId });
       }
-      return { undoneMutationId: mutationId, undoneTool: entry.tool, restoredRecords: entry.before.length, restoredAsCopies };
+      return { undoneMutationId: mutationId, undoneTool: entry.tool, restoredRecords: entry.before.length, restoredAsCopies, ...(notRestored.length ? { notRestored } : {}) };
     });
     const undoReceipt = (result as { receipt: { mutationId: string } }).receipt;
     try { await this.journal.markUndone(principal.userId, mutationId, undoReceipt.mutationId, this.clock()); } catch { /* the undo itself is committed; the marker is bookkeeping */ }

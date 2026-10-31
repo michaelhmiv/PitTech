@@ -6,7 +6,8 @@ import { AuthSecrets, credential } from '../src/auth-credentials.ts';
 import { McpGrants, type McpGrantRecord, type McpGrantStore, type McpPrincipal } from '../src/mcp-grants.ts';
 import { PrivateLibraryService, type McpPhotoStore, type SnapshotReadWriter } from '../src/mcp-library.ts';
 import { McpServer } from '../src/mcp-server.ts';
-import { syncEnvelope, syncTransition, type SyncEnvelope } from '../src/sync-envelope.ts';
+import { syncTransition, type SyncEnvelope } from '../src/sync-envelope.ts';
+import { privateLibraryEnvelope } from '../src/sync-projection.ts';
 import { stable } from '../src/pack.ts';
 import { digest } from '../src/core.ts';
 
@@ -32,7 +33,7 @@ class FakeSnapshots implements SnapshotReadWriter {
   async status() { return { version: this.version, updatedAt: this.version ? NOW : null }; }
   async receiptFor(_user: string, mutationId: string) { return this.receipts.get(mutationId)?.receipt; }
   async put(_user: string, value: unknown) {
-    const next = syncEnvelope(value);
+    const next = privateLibraryEnvelope(value);
     const hash = digest(Buffer.from(stable(next)));
     const prior = this.receipts.get(next.mutationId);
     if (prior) { if (prior.hash !== hash) throw new ApiError(409, 'retry_content_changed'); return structuredClone(prior.receipt); }
