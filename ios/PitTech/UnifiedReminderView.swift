@@ -32,6 +32,9 @@ struct MealRemindersView: View {
     private var active: Bool { store.library.cooks.contains { $0.id == cookId && $0.isActive } }
     var body: some View {
         List {
+            // #183: the legacy cook reminders ride at the top — their
+            // own list, composer and check-in, above the unified rules.
+            LegacyRemindersSection(cookId: cookId)
             Section {
                 Text("One vocabulary everywhere: Log it records what you did, Snooze 10 min asks again soon, Dismiss ends a reminder without recording.")
                 if active { Button("Add reminder") { request = NativeReminderRequest(dishId: dishId) }.accessibilityIdentifier("reminder-rule-add") }

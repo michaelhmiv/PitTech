@@ -47,6 +47,7 @@ struct ScreenshotTextSize: ViewModifier {
             }
         }
         if CommandLine.arguments.contains("--ui-test-crash-recovery") { prepareCrashRecoveryFixture() }
+        if CommandLine.arguments.contains("--ui-test-plan-alerts") { preparePlanAlertsFixture() }
         if CommandLine.arguments.contains("--ui-test-flowing") { prepareFlowingFixture() }
         if CommandLine.arguments.contains("--ui-test-flowing-story") { prepareFlowingStoryFixture() }
         if CommandLine.arguments.contains("--ui-test-capture") {
@@ -85,6 +86,44 @@ struct ScreenshotTextSize: ViewModifier {
             details: "Thread: main\nException: FixtureException\n\nSeeded stack trace")
         CrashDiagnostics.shared.saveReport(report, occurredAtUtcMillis: 1_793_000_000_000)
         CrashDiagnostics.shared.recordOpenCook(cook.id)
+    }
+
+    /// Issue #183 (--ui-test-plan-alerts): one active cook carrying the
+    /// three surfaces this slice lights up — a guidance plan with an
+    /// elapsed step already due and a manual rest step, a target alert
+    /// made active by a fresh reading, and legacy reminders (one due,
+    /// one future).
+    private func preparePlanAlertsFixture() {
+        startCook(title: "Guidance brisket", firstDish: "Brisket")
+        guard let cook = activeCooks.first, let dish = dishRecords(cook.id).first else { return }
+        let now = Int64(Date.now.timeIntervalSince1970 * 1000)
+        do {
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: Double(now - 3_600_000)))
+            let book = CookPlaybook(
+                name: "Guidance fixture",
+                draft: PlaybookCookDraft(title: "Guidance brisket", dishes: [PlaybookDishDraft(name: "Brisket", foodType: "Beef")]),
+                steps: [
+                    PlaybookStep(id: "ui-step-wrap", dishIndex: 0, action: "wrap", title: "Wrap when bark sets", instructions: "Wrap in butcher paper.", trigger: "elapsed", minutes: 30),
+                    PlaybookStep(id: "ui-step-rest", dishIndex: 0, action: "rest", title: "Rest the brisket", instructions: "Rest in a cooler.", trigger: "manual"),
+                ])
+            let plan = CookPlan(book: book, dishIds: [dish.id])
+            library.companionRecords.append(.object([
+                "id": .string("plan:" + cook.id), "kind": .string("plan"), "cookId": .string(cook.id),
+                "title": .string("Guidance fixture"), "payload": .string(try CookPlanCodec.encode(plan)),
+                "createdAtUtcMillis": .number(Double(now)), "updatedAtUtcMillis": .number(Double(now)),
+            ]))
+            try saveCookAlert(cookId: cook.id, title: "Brisket target", rule: CookAlertRule(dishId: dish.id, targetF: 165))
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, title: "Checked temp", occurredAt: Double(now),
+                temperatures: [NoteTemperatureDraft(probeName: "Probe 1", valueText: "170", unit: "°F", measuredAt: Double(now), dishId: dish.id)]))
+            // The due reminder predates "now", so it is inserted as a
+            // row (createCookReminder rightly refuses past times).
+            library.reminders.append(.object(LegacyReminder(row: [
+                "id": .string("ui-legacy-due"), "cookId": .string(cook.id), "title": .string("Check the bark"),
+                "dueAtUtcMillis": .number(Double(now - 60_000)), "timeZoneId": .string(TimeZone.current.identifier),
+                "status": .string("pending"), "createdAtUtcMillis": .number(Double(now - 3_600_000)),
+            ]).row))
+            _ = try createCookReminder(cookId: cook.id, title: "Rotate the grate", dueAtUtcMillis: now + 3_600_000)
+        } catch { assertionFailure("Plan/alerts fixture failed: " + error.localizedDescription) }
     }
 
     /// Flowing Slice 2 (--ui-test-flowing): one finished brisket (the

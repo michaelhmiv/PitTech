@@ -24,6 +24,8 @@ struct PitTechApp: App {
         // crash, and the previous session is judged before this session
         // overwrites its marker.
         CrashDiagnostics.install()
+        // #183: the guidance / alert / legacy-reminder action categories.
+        PitTechNotificationCategories.register()
         let account = _account.wrappedValue
         _pro = State(initialValue: ProSubscriptionCoordinator.forApp(account: account))
         _benchmarks = State(initialValue: CommunityBenchmarksLoader.forApp(account: account, pro: _pro.wrappedValue))
@@ -84,6 +86,9 @@ struct PitTechApp: App {
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
                     await store.refreshReminderDeliveryHistory()
                     store.save()
+                    // #183: legacy reminders carry their own scheduled
+                    // requests; re-arm any that predate this launch.
+                    store.rescheduleLegacyReminderNotifications()
                     #if DEBUG
                     if !CommandLine.arguments.contains("--ui-test-reset") && !CommandLine.arguments.contains("--screenshot-no-ads") && ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { AdsConsentManager.shared.gatherConsent() }
                     #else

@@ -117,12 +117,31 @@ struct ContentView: View {
         .preferredColorScheme(store.appearance)
         .background(PitTechStyle.canvas)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PitTechReminderCook"))) { notification in if let payload = notification.object as? [String: Any] {
-            if let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
-            if payload["open"] as? Bool == true {
+            let kind = payload["kind"] as? String
+            if kind == nil, let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
+            // #183: a category action acts in place and never opens a
+            // surface — the same rule as Android's receivers.
+            if let action = payload["actionIdentifier"] as? String,
+               action != UNNotificationDefaultActionIdentifier, action != UNNotificationDismissActionIdentifier {
+                switch kind {
+                case "guidance":
+                    store.applyGuidanceNotificationAction(cookId: payload["cookId"] as? String ?? "", stepId: payload["stepId"] as? String ?? "", occurrence: payload["occurrence"] as? Int ?? 0, action: action == "guidance-done" ? "done" : "snooze")
+                case "alert":
+                    store.applyAlertNotificationAction(alertId: payload["alertId"] as? String ?? "", action: action == "alert-acknowledge" ? "acknowledge" : "snooze")
+                case "legacy-reminder":
+                    if action == "reminder-snooze" { store.snoozeCookReminder(payload["reminderId"] as? String ?? "") }
+                    else if action == "reminder-dismiss" { store.dismissCookReminder(payload["reminderId"] as? String ?? "") }
+                default: break
+                }
+            } else if payload["open"] as? Bool == true {
                 store.notificationCookId = payload["cookId"] as? String
                 // PL-02: occurrence ids are "<ruleId>:<sequence>" — route the
                 // tap to that rule's check-in.
                 if let occurrence = payload["occurrenceId"] as? String, let cut = occurrence.lastIndex(of: ":") { store.notificationReminderRuleId = String(occurrence[..<cut]) }
+                // PL-03 (#183): an alert tap lands on that alert; a legacy
+                // reminder tap lands on its check-in.
+                if kind == "alert" { store.notificationAlertId = payload["alertId"] as? String }
+                if kind == "legacy-reminder" { store.notificationLegacyReminderId = payload["reminderId"] as? String }
             }
         } }
         .modifier(RootPresentationModifier(telemetry: telemetry))
