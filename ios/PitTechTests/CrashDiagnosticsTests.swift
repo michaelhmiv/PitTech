@@ -21,7 +21,7 @@ final class CrashDiagnosticsTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    private func core() -> CrashDiagnosticsCore { CrashDiagnosticsCore(directory: folder, defaults: defaults) }
+    private func makeCore() -> CrashDiagnosticsCore { CrashDiagnosticsCore(directory: folder, defaults: defaults) }
 
     private func report(_ reference: String = "PT-ABCDEF12") -> DiagnosticReport {
         DiagnosticReport(referenceCode: reference, occurredAtUtc: "2026-10-30 09:15:00 UTC", source: "Uncaught application exception", summary: "Boom: it broke", details: "Thread: main\nException: Boom\n\nstack")
@@ -54,7 +54,7 @@ final class CrashDiagnosticsTests: XCTestCase {
     }
 
     func testPendingUntilAcknowledgedAndRetainedUntilDeleted() {
-        let core = core()
+        let core = makeCore()
         XCTAssertNil(core.pendingReport())
         core.saveReport(report(), occurredAtUtcMillis: 1_000)
         XCTAssertEqual(core.pendingReport()?.referenceCode, "PT-ABCDEF12")
@@ -70,7 +70,7 @@ final class CrashDiagnosticsTests: XCTestCase {
     }
 
     func testOpenCookRecordFollowsTheSelection() {
-        let core = core()
+        let core = makeCore()
         XCTAssertNil(core.openCookAtCrash())
         core.recordOpenCook("cook-1")
         XCTAssertEqual(core.openCookAtCrash(), "cook-1")
@@ -94,10 +94,10 @@ final class CrashDiagnosticsTests: XCTestCase {
     }
 
     func testSessionThatNeverStoodDownLeavesASynthesizedReport() {
-        let core = core()
+        let core = makeCore()
         XCTAssertNil(core.beginSession(now: 10_000))
         // The session dies while active: no endSession, no exception.
-        let next = core()
+        let next = makeCore()
         let synthesized = next.beginSession(now: 20_000)
         XCTAssertEqual(synthesized?.source, "Previous session record")
         XCTAssertEqual(next.pendingReport()?.referenceCode, synthesized?.referenceCode)
@@ -105,21 +105,21 @@ final class CrashDiagnosticsTests: XCTestCase {
     }
 
     func testCleanSessionEndLeavesNoReport() {
-        let core = core()
+        let core = makeCore()
         _ = core.beginSession(now: 10_000)
         core.endSession()
-        XCTAssertNil(core().beginSession(now: 20_000))
-        XCTAssertNil(core().pendingReport())
+        XCTAssertNil(makeCore().beginSession(now: 20_000))
+        XCTAssertNil(makeCore().pendingReport())
     }
 
     func testCapturedExceptionSuppressesTheSynthesizedReport() {
-        let core = core()
+        let core = makeCore()
         _ = core.beginSession(now: 10_000)
         core.recordException(name: "Boom", reason: "kaput", stack: ["frame"], threadName: "main")
         // Simulate the crash-time save landing after beginSession's start:
         // recordException stamps its own now, which is >= the session
         // start, so the next launch keeps the real report.
-        let next = core()
+        let next = makeCore()
         XCTAssertNil(next.beginSession(now: 30_000))
         XCTAssertEqual(next.pendingReport()?.summary, "Boom: kaput")
     }
