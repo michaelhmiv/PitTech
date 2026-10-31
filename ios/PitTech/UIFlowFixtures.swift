@@ -21,6 +21,10 @@ struct ScreenshotTextSize: ViewModifier {
         // PL-13: a kept Start Cook setup draft is device state too — a reset
         // launch starts with no draft, like a fresh install.
         clearSetupDraft()
+        // PL-20 (#184): crash diagnostics are device state too — every
+        // fixture launch starts with none pending, except the fixture
+        // that seeds one below.
+        CrashDiagnostics.shared.resetForUITests()
         if CommandLine.arguments.contains("--ui-test-pack") { prepareIncomingPackFixture(); return }
         if !CommandLine.arguments.contains("--ui-test-empty") {
             for (name, category) in [("Chicken", "Poultry"), ("Mac and cheese", "Pasta"), ("Pork", "Pork")] {
@@ -42,6 +46,7 @@ struct ScreenshotTextSize: ViewModifier {
                 } catch { assertionFailure("UI fixture failed: " + error.localizedDescription) }
             }
         }
+        if CommandLine.arguments.contains("--ui-test-crash-recovery") { prepareCrashRecoveryFixture() }
         if CommandLine.arguments.contains("--ui-test-flowing") { prepareFlowingFixture() }
         if CommandLine.arguments.contains("--ui-test-flowing-story") { prepareFlowingStoryFixture() }
         if CommandLine.arguments.contains("--ui-test-capture") {
@@ -65,6 +70,23 @@ struct ScreenshotTextSize: ViewModifier {
         }
         save()
     }
+    /// PL-20 (#184, --ui-test-crash-recovery): one active cook that was
+    /// "open at the crash", plus a pending diagnostic report with a fixed
+    /// reference code, so the recovery surface and the feedback attach
+    /// preview are deterministic.
+    private func prepareCrashRecoveryFixture() {
+        startCook(title: "Crash fixture brisket", firstDish: "Brisket")
+        guard let cook = activeCooks.first else { return }
+        let report = DiagnosticReport(
+            referenceCode: "PT-1A2B3C4D",
+            occurredAtUtc: "2026-10-30 09:15:00 UTC",
+            source: "Uncaught application exception",
+            summary: "FixtureException: seeded for the crash-recovery flow",
+            details: "Thread: main\nException: FixtureException\n\nSeeded stack trace")
+        CrashDiagnostics.shared.saveReport(report, occurredAtUtcMillis: 1_793_000_000_000)
+        CrashDiagnostics.shared.recordOpenCook(cook.id)
+    }
+
     /// Flowing Slice 2 (--ui-test-flowing): one finished brisket (the
     /// ghost/history source) and one live brisket six hours in, out of
     /// the band and climbing at a pace the engine can state a range for.

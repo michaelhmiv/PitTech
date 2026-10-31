@@ -305,6 +305,9 @@ struct CookDetailView: View {
                     }
                 }
                 .task { notificationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus }
+                // PL-20 (#184): this cook is the open one — crash recovery
+                // returns here. Device-local diagnostics state only.
+                .task { CrashDiagnostics.shared.recordOpenCook(cookId) }
                 .onAppear { latchInitialSection() }
                 .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
                 .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId, checkInRuleId: reminderCheckInRuleId) }

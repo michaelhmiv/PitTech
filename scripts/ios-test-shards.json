@@ -33,7 +33,8 @@
       "ProPaywallUITests",
       "SettingsAppearanceUITests",
       "FlowingLiveUITests",
-      "FlowingStoryUITests"
+      "FlowingStoryUITests",
+      "CrashRecoveryUITests"
     ]
   },
   "uiTarget": "PitTechUITests",
@@ -50,6 +51,7 @@
     "CookPaceEngineTests",
     "CookPackCrossPlatformTests",
     "CookPackTests",
+    "CrashDiagnosticsTests",
     "CrossPlatformArchiveTests",
     "FeedbackClientTests",
     "FlowingE4LogicTests",

@@ -2,14 +2,22 @@ import SwiftUI
 import UIKit
 
 struct NativeFeedbackView: View {
+    /// PL-20 (#184): set when the view is opened from the crash-recovery
+    /// surface's "Attach to a problem report" — the report starts out
+    /// included, and the preview below shows exactly what will be sent.
+    var includeDiagnosticOnOpen = false
     @AppStorage("feedback-draft-kind") private var kind = "BUG"
     @AppStorage("feedback-draft-title") private var title = ""
     @AppStorage("feedback-draft-description") private var details = ""
+    @AppStorage("feedback-draft-include-diagnostic") private var includeDraft = true
     @State private var preview: NativeFeedbackSubmission?
     @State private var showingPreview = false
     @State private var sending = false
     @State private var error: String?
     @State private var receipt: String?
+    @State private var savedReport: DiagnosticReport?
+    @State private var includeReport = false
+    @State private var showReportPreview = false
     var body: some View {
         // TURN-IN (Slice 7, frames `24-feedback` / `25-feedback-review` /
         // `26-feedback-error`): the composer leaves the system Form for
@@ -57,8 +65,39 @@ struct NativeFeedbackView: View {
                         .foregroundStyle(PitTechStyle.inkMuted)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
+                if kind == "BUG", let report = savedReport {
+                    // PL-20 (#184): the opt-in, exactly Android's — off
+                    // (or a feature idea) means the report never leaves
+                    // the device; the preview is the exact payload.
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle(isOn: $includeReport) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Include the saved crash report")
+                                    .font(PitTechFont.body)
+                                Text("Reference \(report.referenceCode); includes the exception summary and stack trace.")
+                                    .font(.caption)
+                                    .foregroundStyle(PitTechStyle.supporting)
+                            }
+                        }
+                        .accessibilityIdentifier("feedback-include-diagnostic")
+                        .onChange(of: includeReport) { _, value in includeDraft = value }
+                        if includeReport {
+                            Button(showReportPreview ? "Hide crash report preview" : "Preview crash report") { showReportPreview.toggle() }
+                                .accessibilityIdentifier("feedback-crash-preview-toggle")
+                            if showReportPreview {
+                                TurnInCard {
+                                    Text(report.plainText)
+                                        .font(PitTechFont.monoMeta)
+                                        .foregroundStyle(PitTechStyle.ink)
+                                        .textSelection(.enabled)
+                                }
+                                .accessibilityIdentifier("feedback-crash-preview")
+                            }
+                        }
+                    }
+                }
                 Button("Review feedback") {
-                    preview = NativeFeedbackSubmission(kind: kind, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: details.trimmingCharacters(in: .whitespacesAndNewlines), appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0", osVersion: UIDevice.current.systemVersion, device: UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")
+                    preview = NativeFeedbackSubmission(kind: kind, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: details.trimmingCharacters(in: .whitespacesAndNewlines), appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0", osVersion: UIDevice.current.systemVersion, device: UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone", diagnosticReport: kind == "BUG" && includeReport ? savedReport : nil)
                     showingPreview = true
                 }
                 .buttonStyle(.borderedProminent)
@@ -75,6 +114,14 @@ struct NativeFeedbackView: View {
         }
         .background(PitTechStyle.canvas.ignoresSafeArea())
         .navigationTitle("Feedback").navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            savedReport = CrashDiagnostics.shared.savedReport()
+            includeReport = kind == "BUG" && savedReport != nil && (includeDiagnosticOnOpen || includeDraft)
+        }
+        .onChange(of: kind) { _, value in
+            // Android: switching to Problem re-arms the attach default.
+            if value == "BUG" { includeReport = savedReport != nil }
+        }
             .sheet(isPresented: $showingPreview) {
                 NavigationStack {
                     ScrollView {
@@ -96,6 +143,22 @@ struct NativeFeedbackView: View {
                                     LabeledContent("PitTech", value: preview.appVersion)
                                     LabeledContent("iOS", value: preview.osVersion)
                                     LabeledContent("Device category", value: preview.device)
+                                }
+                                if let report = preview.diagnosticReport {
+                                    // PL-20 (#184): the review shows the
+                                    // exact diagnostic payload, not just
+                                    // a note that one is attached.
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("The saved crash report (reference \(report.referenceCode)) is included.")
+                                            .font(PitTechFont.body)
+                                        TurnInCard {
+                                            Text(report.plainText)
+                                                .font(PitTechFont.monoMeta)
+                                                .foregroundStyle(PitTechStyle.ink)
+                                                .textSelection(.enabled)
+                                        }
+                                        .accessibilityIdentifier("feedback-review-diagnostic")
+                                    }
                                 }
                                 Text("This text will be public on GitHub.")
                                     .font(.caption)
