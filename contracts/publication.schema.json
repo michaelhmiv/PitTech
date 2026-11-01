@@ -11,7 +11,149 @@
       "enum": [
         "recipe",
         "collection",
-        "attempt"
+        "attempt",
+        "cook"
+      ]
+    },
+    "session": {
+      "description": "The measured session behind a kind=cook publication: the event the dishes shared. Present (non-null) exactly when kind is cook; enforced by the server validator. Times are offsets from the session start so the payload stays relative-timing only.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "smokerName": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fuelType": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "woodOrPelletBlend": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "setpoint": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "value": {
+                      "type": "number"
+                    },
+                    "unit": {
+                      "enum": [
+                        "°C",
+                        "°F"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outdoorTemperatureValue": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outdoorTemperatureUnit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 16
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "weatherNotes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "windNotes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "notes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "serveAtOffsetMillis": {
+              "description": "Planned serve time (from the serve plan that started this cook) as an offset from the session start; null when the cook had no plan.",
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "durationMillis": {
+              "description": "Session length (cook end minus cook start); null when the session end was not recorded.",
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "smokerName",
+            "fuelType",
+            "woodOrPelletBlend",
+            "setpoint",
+            "outdoorTemperatureValue",
+            "outdoorTemperatureUnit",
+            "weatherNotes",
+            "windNotes",
+            "notes",
+            "serveAtOffsetMillis",
+            "durationMillis"
+          ]
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "identityMode": {
@@ -389,6 +531,83 @@
                       ]
                     },
                     "maxItems": 1000
+                  },
+                  "anchorOffsetMillis": {
+                    "description": "Where this dish's story origin (its food-on anchor, or its first recorded point) sits on the publication session clock. Written only by kind=cook publications; consumers interpret it only when the payload carries a session. Null when the story could not be placed.",
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "inputs": {
+                    "description": "The dish's recorded cook inputs (wrap, rub, spritz) lifted from its measured record so consumers read them without the private results rows. Validated at publish time; community aggregation does not read it yet (v1 metrics unchanged).",
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "wrapMaterial": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "none",
+                                  "foil",
+                                  "butcher_paper"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "rub": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 160
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "spritz": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "spritzMedium": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 160
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "wrapMaterial",
+                          "rub",
+                          "spritz",
+                          "spritzMedium"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [

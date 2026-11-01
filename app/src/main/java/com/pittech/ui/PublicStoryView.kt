@@ -14,8 +14,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
 import com.pittech.data.PublicDetail
 import com.pittech.data.PublicManager
+import com.pittech.domain.CookInputVocabulary
+import com.pittech.domain.RecipeReferenceTimeline
+import com.pittech.domain.WrapMaterial
 import org.json.JSONObject
 import java.util.Locale
 
@@ -69,6 +73,24 @@ import java.util.Locale
             }
         }
         if(!story.isNull("foodOffOffsetMillis"))Text("Recorded Food off · "+time(story.getDouble("foodOffOffsetMillis")),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+        // Publishable Cooks (issue #250): the dish's recorded inputs, lifted
+        // into the story at publish time. Only cook publications carry the
+        // key; a null value means the cook recorded no inputs, and fields
+        // read as not recorded — never guessed.
+        if(story.has("inputs")) {
+            val inputs=if(story.isNull("inputs"))null else story.getJSONObject("inputs")
+            TurnInMetaLabel("Cook inputs")
+            if(inputs==null)Text(CookInputVocabulary.NOT_RECORDED_LABEL)
+            else {
+                Text("Wrap · "+(if(inputs.isNull("wrapMaterial"))CookInputVocabulary.NOT_RECORDED_LABEL else WrapMaterial.fromArchive(inputs.getString("wrapMaterial"))?.label ?: CookInputVocabulary.NOT_RECORDED_LABEL))
+                Text("Rub · "+(if(inputs.isNull("rub"))CookInputVocabulary.NOT_RECORDED_LABEL else inputs.getString("rub")))
+                Text("Spritz · "+when {
+                    inputs.isNull("spritz")->CookInputVocabulary.NOT_RECORDED_LABEL
+                    inputs.getBoolean("spritz")->"Yes"+(if(inputs.isNull("spritzMedium"))"" else " · "+inputs.getString("spritzMedium"))
+                    else->"No"
+                })
+            }
+        }
         story.getJSONObject("verdict").let { verdict->
             if(!verdict.isNull("rating")) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -81,6 +103,81 @@ import java.util.Locale
         }
     }
 }
+private fun sessionDurationLabel(millis: Long): String { val minutes=millis/60_000; return if(minutes>=60)"${minutes/60}h ${minutes%60}m" else "${minutes}m" }
+
+/**
+ * Publishable Cooks (issue #250): the session header of a cook publication —
+ * the event the dishes shared. Rendered from the payload's session object on
+ * both the public detail page and the publisher's own preview.
+ */
+@Composable internal fun PublicSessionView(session: JSONObject,temperatureUnit: String) {
+    fun temperature(value: Double,unit: String): String {
+        val converted=when { unit==temperatureUnit->value; unit=="°C" && temperatureUnit=="°F"->value*9/5+32; unit=="°F" && temperatureUnit=="°C"->(value-32)*5/9; else->value }
+        val shown=if(unit in setOf("°C","°F"))temperatureUnit else unit
+        return java.math.BigDecimal.valueOf(converted).stripTrailingZeros().toPlainString()+" "+shown
+    }
+    val facts=mutableListOf<String>()
+    if(!session.isNull("smokerName"))facts+="Smoker · "+session.getString("smokerName")
+    session.optJSONObject("setpoint")?.let { facts+="Ran at "+temperature(it.getDouble("value"),it.getString("unit")) }
+    if(!session.isNull("fuelType"))facts+="Fuel · "+session.getString("fuelType")
+    if(!session.isNull("woodOrPelletBlend"))facts+="Wood · "+session.getString("woodOrPelletBlend")
+    if(!session.isNull("durationMillis"))facts+="Cooked for "+sessionDurationLabel(session.getLong("durationMillis"))
+    if(!session.isNull("serveAtOffsetMillis"))facts+="Serve time "+RecipeReferenceTimeline.relativeLabel(session.getLong("serveAtOffsetMillis"))
+    val weather=mutableListOf<String>()
+    if(!session.isNull("outdoorTemperatureValue"))weather+=temperature(session.getDouble("outdoorTemperatureValue"),session.optString("outdoorTemperatureUnit").ifBlank { temperatureUnit })
+    if(session.optString("weatherNotes").isNotEmpty())weather+=session.getString("weatherNotes")
+    if(session.optString("windNotes").isNotEmpty())weather+=session.getString("windNotes")
+    Column(verticalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.testTag("public-session")) {
+        TurnInMetaLabel("The cook")
+        facts.forEach { Text(it,style=MaterialTheme.typography.bodyMedium) }
+        if(weather.isNotEmpty())Text(weather.joinToString(" · "),style=MaterialTheme.typography.bodyMedium)
+        if(session.optString("notes").isNotEmpty())Text(session.getString("notes"))
+    }
+}
+
+/**
+ * The shared timeline of a cook publication: every dish's milestones placed
+ * on the one session clock (story anchor offset + milestone offset). Events
+ * recorded once for the whole session appear in several dishes' stories
+ * under the same milestone id and are shown once, unlabeled; dish events
+ * carry their dish's name. View-only — saving a cook forks its dishes as
+ * recipes; the session itself never transfers (issue #250, Option A).
+ */
+@Composable internal fun PublicSessionTimeline(detail: PublicDetail) {
+    val merged=remember(detail.id) {
+        val byId=linkedMapOf<String,Triple<Long,String,MutableSet<String>>>()
+        var unplaced=false
+        detail.recipes.forEach { recipe ->
+            val story=recipe.optJSONObject("story") ?: return@forEach
+            val milestones=story.rows("milestones")
+            if(story.isNull("anchorOffsetMillis")) { if(milestones.isNotEmpty())unplaced=true; return@forEach }
+            val anchorOffset=story.getLong("anchorOffsetMillis")
+            milestones.forEach { milestone ->
+                val id=milestone.getString("id")
+                val existing=byId[id]
+                if(existing==null)byId[id]=Triple(anchorOffset+milestone.getLong("offsetMillis"),milestone.getString("text"),mutableSetOf(recipe.getString("title")))
+                else existing.third.add(recipe.getString("title"))
+            }
+        }
+        byId.values.map { Triple(it.first,it.second,if(it.third.size==1)it.third.single() else null) }
+            .sortedWith(compareBy({ it.first },{ it.third ?: "" },{ it.second })) to unplaced
+    }
+    if(merged.first.isNotEmpty())Column(verticalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.testTag("public-session-timeline")) {
+        TurnInMetaLabel("Shared timeline")
+        Text("One timeline for the whole cook",style=PitTechTextStyles.bannerCard)
+        merged.first.forEach { row ->
+            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Text(RecipeReferenceTimeline.relativeLabel(row.first),style=PitTechTextStyles.monoMeta,color=pitTechTokens().emberText)
+                Column {
+                    row.third?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted) }
+                    Text(row.second,style=MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        if(merged.second)Text("One dish's story couldn't be placed on the session clock; its own timeline is in its story below.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
+    }
+}
+
 @Composable internal fun PublicAdditionalPhoto(manager: PublicManager,detail: PublicDetail,asset: JSONObject,caption: String) {
     var bytes by remember(asset.getString("sha256")){mutableStateOf<ByteArray?>(null)}
     LaunchedEffect(asset.getString("sha256")){try{bytes=manager.image(detail.id,asset)}catch(_: Exception){}}

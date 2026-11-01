@@ -70,7 +70,7 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
                 entry
             }
             val history = CookPackHistory.freeze(cooks.exportSnapshot(cookId), dishIds, photoSources)
-            val document = SharingDocument(meal.cook.title.take(160), entries, cookId, sourceHistoryJson = history)
+            val document = SharingDocument(meal.cook.title.take(160), entries, cookId, sourceHistoryJson = history, sessionJson = sessionCapture(meal))
             val now = System.currentTimeMillis()
             database.withTransaction {
                 dao.put(CompanionRecord(id, SharingDraftCodec.DRAFT, title = document.title, payload = SharingDraftCodec.encode(document), createdAtUtcMillis = now, updatedAtUtcMillis = now))
@@ -85,6 +85,7 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
         require(previous.kind == SharingDraftCodec.DRAFT && previous.updatedAtUtcMillis == expectedUpdatedAt) { "This draft changed. Reopen its saved version." }
         val before = SharingDraftCodec.decode(previous.payload)
         require(value.sourceHistoryJson == null && before.sourceHistoryJson == null || value.sourceHistoryJson != null && before.sourceHistoryJson != null && SharingDraftCodec.sameStory(value.sourceHistoryJson, before.sourceHistoryJson)) { "Recorded meal facts cannot be edited as instructions." }
+        require(value.sessionJson == null && before.sessionJson == null || value.sessionJson != null && before.sessionJson != null && SharingDraftCodec.sameStory(value.sessionJson, before.sessionJson)) { "Recorded session facts cannot be edited as instructions." }
         require(value.entries.all { e -> before.entries.firstOrNull { it.id == e.id }?.storyJson?.let { SharingDraftCodec.sameStory(it, e.storyJson) } == true }) { "Recorded source facts cannot be edited as instructions." }
         val owned = assets(id)
         require(value.entries.all { entry -> entry.photoIds.all { photoId -> owned.any { it.id == photoId && it.action == entry.id } } }) { "Choose photos owned by this draft's dish." }
@@ -156,6 +157,27 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
             val updated = document.copy(entries = document.entries.map { if (it.id == entryId) it.copy(snapshot = snapshot, photoIds = it.photoIds + copies.map { p -> p.id }) else it })
             return database.withTransaction { dao.putPhotos(copies); save(id, updated, expectedUpdatedAt) }
         } catch (failure: Throwable) { copies.forEach { photos.delete(it.relativePath) }; throw failure }
+    }
+
+    /**
+     * Publishable Cooks (issue #250): the recorded session facts a cook
+     * publication carries, captured from the cook itself plus the serve plan
+     * that started it (its planned serve time), when one exists. Everything
+     * is the cook's own recorded data — nothing is asked of the author.
+     */
+    private suspend fun sessionCapture(meal: CookDetailData): String {
+        val cook = meal.cook
+        val serveAt = dao.observeAll().first().asSequence().filter { it.kind == "upcoming" }
+            .mapNotNull { record -> runCatching { ServeTimePlanner.decode(record.payload) }.getOrNull() }
+            .firstOrNull { it.startedCookId == cook.id }?.serveAt
+        fun text(value: String?, limit: Int) = value?.trim()?.takeIf { it.isNotEmpty() }?.take(limit) ?: JSONObject.NULL
+        return JSONObject().put("startedAtUtcMillis", cook.startedAtUtcMillis)
+            .put("endedAtUtcMillis", cook.endedAtUtcMillis ?: JSONObject.NULL)
+            .put("smokerName", text(cook.smokerName, 160)).put("fuelType", text(cook.fuelType, 160)).put("woodOrPelletBlend", text(cook.woodOrPelletBlend, 160))
+            .put("setpointValue", cook.initialSetpointValue ?: JSONObject.NULL).put("setpointUnit", text(cook.initialSetpointUnit, 16))
+            .put("outdoorTemperatureValue", cook.outdoorTemperatureValue ?: JSONObject.NULL).put("outdoorTemperatureUnit", text(cook.outdoorTemperatureUnit, 16))
+            .put("weatherNotes", (cook.weatherNotes ?: "").take(2000)).put("windNotes", (cook.windNotes ?: "").take(2000)).put("notes", (cook.notes ?: "").take(2000))
+            .put("serveAtUtcMillis", serveAt ?: JSONObject.NULL).toString()
     }
 
     internal fun story(meal: CookDetailData, dishId: String): String {

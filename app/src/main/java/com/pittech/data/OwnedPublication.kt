@@ -20,7 +20,7 @@ internal data class PublicationEditContext(val receipt: PublicationReceipt,val r
         return JSONObject().put("receipt",receipt.json()).put("rootSource",JSONTokener(rootSource).nextValue()).put("memberMethods",ids(memberMethods)).put("memberIds",ids(memberIds)).put("memberSources",sources).put("instructionIds",ids(instructionIds)).put("assetIds",ids(assetIds)).put("measuredAttemptId",measuredAttemptId ?: JSONObject.NULL)
     }
     fun apply(prepared: PreparedPublication,document: SharingDocument,kind: String): PreparedPublication {
-        validate();require(kind in setOf("recipe","collection","attempt")); val selected=document.entries.filter { it.included }; val payload=JSONObject(prepared.payload.toString()); val rows=payload.getJSONArray("recipes"); require(rows.length()==selected.size)
+        validate();require(kind in setOf("recipe","collection","attempt","cook")); val selected=document.entries.filter { it.included }; val payload=JSONObject(prepared.payload.toString()); val rows=payload.getJSONArray("recipes"); require(rows.length()==selected.size)
         val photos=linkedMapOf<String,ByteArray>()
         selected.forEachIndexed { index,entry ->
             val recipe=rows.getJSONObject(index); require(recipe.getString("id")==PublicationProjection.id("recipe:"+entry.id))
@@ -90,7 +90,22 @@ internal object OwnedPublication {
             entries+=SharingEntry(id=entryId,snapshot=snapshot,storyJson=frozen.toString(),includeStory=story!=null,photoIds=photoIds)
             recipe.stringOrNull("method")?.let { methods[entryId]=it };members[entryId]=publicId;sources[entryId]=PublicationEditContext.source(recipe.opt("source"),receipt.id)
         }
-        val document=SharingDocument(payload.getString("title"),entries,identityMode=payload.getString("identityMode"),heroPhotoId=hero);SharingDraftCodec.validate(document)
+        // A cook publication's draft also recovers its session facts from the
+        // published payload, rebased onto the same internal origin the frozen
+        // stories use, so an owner update rebuilds the identical session
+        // offsets (issue #250: recorded facts stay frozen through updates).
+        val sessionJson=payload.optJSONObject("session")?.let { session ->
+            val origin=946684800000L
+            fun nullable(key: String): Any=if(session.isNull(key))JSONObject.NULL else session.get(key)
+            JSONObject().put("startedAtUtcMillis",origin)
+                .put("endedAtUtcMillis",session.longOrNull("durationMillis")?.let { origin+it } ?: JSONObject.NULL)
+                .put("smokerName",nullable("smokerName")).put("fuelType",nullable("fuelType")).put("woodOrPelletBlend",nullable("woodOrPelletBlend"))
+                .put("setpointValue",session.optJSONObject("setpoint")?.opt("value") ?: JSONObject.NULL).put("setpointUnit",session.optJSONObject("setpoint")?.opt("unit") ?: JSONObject.NULL)
+                .put("outdoorTemperatureValue",nullable("outdoorTemperatureValue")).put("outdoorTemperatureUnit",nullable("outdoorTemperatureUnit"))
+                .put("weatherNotes",session.optString("weatherNotes")).put("windNotes",session.optString("windNotes")).put("notes",session.optString("notes"))
+                .put("serveAtUtcMillis",session.longOrNull("serveAtOffsetMillis")?.let { origin+it } ?: JSONObject.NULL).toString()
+        }
+        val document=SharingDocument(payload.getString("title"),entries,identityMode=payload.getString("identityMode"),heroPhotoId=hero,sessionJson=sessionJson);SharingDraftCodec.validate(document)
         val context=PublicationEditContext(receipt,PublicationEditContext.source(payload.opt("source"),receipt.id),members,sources,steps,assets,payload.stringOrNull("measuredAttemptId"),methods);context.validate()
         return OwnedPublicationDraft(UUID.randomUUID().toString(),document,photos,context)
     }

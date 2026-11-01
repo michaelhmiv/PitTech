@@ -291,10 +291,16 @@ export function projectEligibleAttempts(input: readonly unknown[], cutoffMillis:
 // Story shape accepted from the allowlisted SQL projection. Measured fields,
 // channel identities (for gap validation), milestone actions (wrap/spritz),
 // and gap ranges are read; verdicts/ratings are validated for shape but never
-// extracted, so no quality signal exists to rank by. Anything outside the known
-// story keys is rejected; known-sensitive keys are forbidden outright.
-const STORY_KEYS = ['attemptId', 'channels', 'foodOffOffsetMillis', 'foodOnOffsetMillis',
-  'gaps', 'measurements', 'milestones', 'verdict'].sort();
+// extracted, so no quality signal exists to rank by. Publishable Cooks
+// (issue #250) adds two keys — anchorOffsetMillis (session-clock placement)
+// and inputs (wrap/rub/spritz lifted from the dish's record) — which are
+// shape-validated here and deliberately NOT extracted: v1 metrics are
+// unchanged, and the inputs stay reserved as documented future priors.
+// Anything outside the known story keys is rejected; known-sensitive keys
+// are forbidden outright.
+const STORY_KEYS = ['anchorOffsetMillis', 'attemptId', 'channels', 'foodOffOffsetMillis', 'foodOnOffsetMillis',
+  'gaps', 'inputs', 'measurements', 'milestones', 'verdict'].sort();
+const INPUT_KEYS = ['rub', 'spritz', 'spritzMedium', 'wrapMaterial'].sort();
 const MEASUREMENT_KEYS = ['channelId', 'offsetMillis', 'quality', 'role', 'valueCelsius'].sort();
 const offset = (value: unknown): value is number | null =>
   value === null || (Number.isSafeInteger(value) && (value as number) >= -604800000 && (value as number) <= 2592000000);
@@ -371,6 +377,17 @@ export function storyV1Fields(story: unknown): Pick<RawContribution,
   const gaps = storyGaps(row.gaps, channels);
   if (!row.verdict || typeof row.verdict !== 'object' || Array.isArray(row.verdict)) throw invalid();
   if (!uuid(row.attemptId) || !offset(row.foodOnOffsetMillis) || !offset(row.foodOffOffsetMillis)) throw invalid();
+  // Cook-publication extras: validated, never extracted (see STORY_KEYS note).
+  if (row.anchorOffsetMillis !== undefined && !offset(row.anchorOffsetMillis)) throw invalid();
+  if (row.inputs !== undefined && row.inputs !== null) {
+    const inputs = row.inputs as Record<string, unknown>;
+    if (typeof inputs !== 'object' || Array.isArray(inputs)) throw invalid();
+    if (JSON.stringify(Object.keys(inputs).sort()) !== JSON.stringify(INPUT_KEYS)) throw invalid();
+    if (![null, 'none', 'foil', 'butcher_paper'].includes(inputs.wrapMaterial as string | null)) throw invalid();
+    if (!(inputs.rub === null || (typeof inputs.rub === 'string' && (inputs.rub as string).length <= 160))) throw invalid();
+    if (!(inputs.spritz === null || typeof inputs.spritz === 'boolean')) throw invalid();
+    if (!(inputs.spritzMedium === null || (typeof inputs.spritzMedium === 'string' && (inputs.spritzMedium as string).length <= 160))) throw invalid();
+  }
   const on = row.foodOnOffsetMillis as number | null, off = row.foodOffOffsetMillis as number | null;
   if (on !== null && off !== null && off < on) throw invalid();
   if (!Array.isArray(row.measurements) || row.measurements.length > 250000) throw invalid();

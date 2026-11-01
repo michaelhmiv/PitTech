@@ -28,6 +28,14 @@ data class SharingDocument(
     val card: com.pittech.data.ShareCardOptions = com.pittech.data.ShareCardOptions(),
     /** The one taxonomy category this publication counts as; see [FoodCategories]. */
     val categoryId: String = FoodCategories.DEFAULT_ID,
+    /**
+     * The source cook's recorded session facts (smoker, setpoint, fuel, wood,
+     * weather, serve-plan target) captured when the draft was created from a
+     * meal — Publishable Cooks, issue #250. Recorded facts, not editable
+     * content: [SharingRepository.save] rejects a draft that changes them.
+     * Null for drafts that did not come from a recorded cook session.
+     */
+    val sessionJson: String? = null,
 )
 
 object SharingDraftCodec {
@@ -49,6 +57,7 @@ object SharingDraftCodec {
             .put("sourceCookId", value.sourceCookId ?: JSONObject.NULL).put("heroPhotoId", value.heroPhotoId ?: JSONObject.NULL)
             .put("collectionId", value.collectionId ?: JSONObject.NULL).put("parentRevisionId", value.parentRevisionId ?: JSONObject.NULL)
             .put("sourceHistory", value.sourceHistoryJson?.let(::JSONObject) ?: JSONObject.NULL)
+            .put("session", value.sessionJson?.let(::JSONObject) ?: JSONObject.NULL)
             .put("card", value.card.encode())
             .put("entries", JSONArray(value.entries.map { entry -> JSONObject().put("id", entry.id)
                 .put("sourceDishId", entry.sourceDishId ?: JSONObject.NULL).put("sourceRevisionId", entry.sourceRevisionId ?: JSONObject.NULL)
@@ -75,7 +84,7 @@ object SharingDraftCodec {
         val categoryId = if (FoodCategories.isValid(storedCategory)) storedCategory else FoodCategories.suggestedIdFor(entries.firstOrNull()?.let { entry ->
             runCatching { JSONObject(RecipeSnapshotCodec.encode(entry.snapshot)).getJSONObject("draft").getJSONArray("dishes").getJSONObject(0).optString("foodType") }.getOrNull()
         })
-        val result = SharingDocument(o.getString("title"), entries, optional("sourceCookId"), o.getString("identityMode"), optional("heroPhotoId"), optional("collectionId"), optional("parentRevisionId"), o.optJSONObject("sourceHistory")?.toString(), com.pittech.data.ShareCardOptions.decode(o.optJSONObject("card")), categoryId)
+        val result = SharingDocument(o.getString("title"), entries, optional("sourceCookId"), o.getString("identityMode"), optional("heroPhotoId"), optional("collectionId"), optional("parentRevisionId"), o.optJSONObject("sourceHistory")?.toString(), com.pittech.data.ShareCardOptions.decode(o.optJSONObject("card")), categoryId, o.optJSONObject("session")?.toString())
         validate(result); return result
     }
     fun validate(value: SharingDocument) {
@@ -104,5 +113,11 @@ object SharingDraftCodec {
             }
         }
         require(value.heroPhotoId == null || value.entries.filter { it.included }.any { value.heroPhotoId in it.photoIds }) { "Choose a hero photo included in this draft." }
+        value.sessionJson?.let { raw ->
+            val session = JSONObject(raw)
+            require(session.getDouble("startedAtUtcMillis") in 1.0..253402300799999.0) { "Invalid recorded cook session." }
+            require(session.optString("smokerName").length <= 160 && session.optString("fuelType").length <= 160 && session.optString("woodOrPelletBlend").length <= 160) { "Invalid recorded cook session." }
+            require(session.optString("weatherNotes").length <= 2000 && session.optString("windNotes").length <= 2000 && session.optString("notes").length <= 2000) { "Invalid recorded cook session." }
+        }
     }
 }

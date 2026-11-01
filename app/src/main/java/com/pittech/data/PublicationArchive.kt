@@ -71,10 +71,65 @@ internal object PublicationProjection {
             .put("milestones",JSONArray(milestones)).put("gaps",JSONArray(gaps)).put("verdict",JSONObject().put("rating",rating ?: JSONObject.NULL)
                 .put("cookAgain",again?.let { it==1.0 } ?: JSONObject.NULL).put("notes",text(notes,2000)))
     }
+    /** The payload session object for a cook publication, rebuilt from the
+     * draft's captured session facts with times rebased to session-relative
+     * offsets (the payload stays relative-timing only, like every story). */
+    private fun sessionObject(sessionRaw: JSONObject): JSONObject {
+        val started=sessionRaw.getLong("startedAtUtcMillis")
+        val ended=if(sessionRaw.isNull("endedAtUtcMillis"))null else sessionRaw.getLong("endedAtUtcMillis")
+        fun str(key: String): Any=if(sessionRaw.isNull(key))JSONObject.NULL else sessionRaw.getString(key)
+        val setpoint=if(sessionRaw.isNull("setpointValue") || sessionRaw.isNull("setpointUnit"))JSONObject.NULL else JSONObject().put("value",sessionRaw.getDouble("setpointValue")).put("unit",sessionRaw.getString("setpointUnit"))
+        return JSONObject().put("smokerName",str("smokerName")).put("fuelType",str("fuelType")).put("woodOrPelletBlend",str("woodOrPelletBlend"))
+            .put("setpoint",setpoint)
+            .put("outdoorTemperatureValue",if(sessionRaw.isNull("outdoorTemperatureValue"))JSONObject.NULL else sessionRaw.getDouble("outdoorTemperatureValue"))
+            .put("outdoorTemperatureUnit",str("outdoorTemperatureUnit"))
+            .put("weatherNotes",sessionRaw.optString("weatherNotes")).put("windNotes",sessionRaw.optString("windNotes")).put("notes",sessionRaw.optString("notes"))
+            .put("serveAtOffsetMillis",(if(sessionRaw.isNull("serveAtUtcMillis"))null else sessionRaw.getLong("serveAtUtcMillis"))?.let { offset(it-started) } ?: JSONObject.NULL)
+            .put("durationMillis",ended?.let { it-started }?.takeIf { it>=0 }?.let { offset(it) } ?: JSONObject.NULL)
+    }
+    /** Publishable Cooks (issue #250): place an actual dish story on the
+     * session clock and lift its recorded cook inputs into the story, so the
+     * publication renders one shared timeline and per-dish inputs without the
+     * private results rows. Frozen stories (owner updates of an existing cook
+     * publication) already carry both from their original publication and are
+     * left untouched — recorded facts stay frozen. */
+    private fun placeOnSession(entry: SharingEntry,storyJson: JSONObject,sessionRaw: JSONObject) {
+        val raw=JSONObject(entry.storyJson)
+        if(raw.optJSONObject("publicStory")!=null)return
+        val started=sessionRaw.getLong("startedAtUtcMillis")
+        val ended=if(sessionRaw.isNull("endedAtUtcMillis"))null else sessionRaw.getLong("endedAtUtcMillis")
+        val anchor=if(raw.isNull("anchorUtcMillis"))null else raw.getLong("anchorUtcMillis")
+        val origin=anchor ?: (rows(raw,"observations").map { it.getLong("occurredAtUtcMillis") }+rows(raw,"readings").map { it.getLong("measuredAtUtcMillis") }).minOrNull()
+        if(origin!=null) {
+            require(origin>=started && (ended==null || origin<=ended)) { "A dish's recorded story doesn't belong to this cook session, so it can't join the cook publication. Exclude it, or publish the meal as a collection instead." }
+            storyJson.put("anchorOffsetMillis",offset(origin-started))
+        } else storyJson.put("anchorOffsetMillis",JSONObject.NULL)
+        storyJson.put("inputs",cookInputs(raw) ?: JSONObject.NULL)
+    }
+    private fun cookInputs(raw: JSONObject): JSONObject? {
+        // The story's results are the dish's own rows; the derivation mirrors
+        // CookInputVocabulary.fromResults (a spritz action on the timeline is
+        // a recorded YES even when the prompt went unanswered).
+        val results=rows(raw,"results")
+        fun result(type: String)=results.firstOrNull { it.optString("type")==type }?.let { if(it.isNull("textValue"))null else it.getString("textValue") }?.takeIf { it.isNotBlank() }
+        val wrap=result(CookInputVocabulary.TYPE_WRAP_MATERIAL)?.let { WrapMaterial.fromArchive(it)?.archiveValue }
+        val rub=result(CookInputVocabulary.TYPE_RUB)
+        var spritz=when(result(CookInputVocabulary.TYPE_SPRITZ)) { "yes"->true; "no"->false; else->null }
+        if(spritz==null && rows(raw,"observations").any { it.optString("action")=="spritz" })spritz=true
+        val medium=result(CookInputVocabulary.TYPE_SPRITZ_MEDIUM)
+        if(wrap==null && rub==null && spritz==null && medium==null)return null
+        return JSONObject().put("wrapMaterial",wrap ?: JSONObject.NULL).put("rub",rub ?: JSONObject.NULL)
+            .put("spritz",spritz ?: JSONObject.NULL).put("spritzMedium",medium ?: JSONObject.NULL)
+    }
     fun build(document: SharingDocument,updated: Long,photos: List<PublicationPhoto>,kind: String): PreparedPublication {
         SharingDraftCodec.validate(document);val selected=document.entries.filter { it.included }
-        require(selected.size in 1..20 && kind in setOf("recipe","collection","attempt") && (kind!="recipe" || selected.size==1))
+        require(selected.size in 1..20 && kind in setOf("recipe","collection","attempt","cook") && (kind!="recipe" || selected.size==1))
         require(kind!="attempt" || document.sourceCookId!=null && selected.size==1 && selected.single().includeStory)
+        // A cook publication IS the recorded session: it needs the captured
+        // session facts and every selected dish's story. A dish without its
+        // story is excluded from the cook, never published story-less.
+        require(kind!="cook" || document.sessionJson!=null && selected.all { it.includeStory }) { "A cook publication needs the recorded session and every dish's story. Exclude a dish to leave it out of the cook." }
+        val sessionRaw=document.sessionJson?.takeIf { kind=="cook" }?.let(::JSONObject)
         val images=linkedMapOf<String,ByteArray>();var expanded=0L
         val recipes=selected.map { entry->
             val snapshot=entry.snapshot;val setup=JSONObject(RecipeSnapshotCodec.encode(snapshot)).getJSONObject("draft").getJSONArray("dishes").getJSONObject(0)
@@ -93,16 +148,19 @@ internal object PublicationProjection {
                 require(expanded<=64*1024*1024);images[assetId]=bytes
                 JSONObject().put("id",assetId).put("path",path).put("mimeType","image/jpeg").put("sha256",RelayProtocol.hash(bytes)).put("caption",text(photo.caption,2000))
             }
+            val storyValue=story(entry,document.sourceCookId!=null)
+            if(sessionRaw!=null && storyValue is JSONObject)placeOnSession(entry,storyValue,sessionRaw)
             JSONObject().put("id",id("recipe:"+entry.id)).put("revisionId",id("revision:${entry.id}:$updated")).put("title",text(snapshot.name,160))
                 .put("description",text(snapshot.description,2000)).put("foodType",text(setup.optString("foodType"),160)).put("cut",optional(setup,"cut")?.let { text(it,160) } ?: JSONObject.NULL)
                 .put("weightGrams",grams ?: JSONObject.NULL).put("method",JSONObject.NULL).put("ingredients",JSONArray(ingredients)).put("instructions",JSONArray(instructions))
-                .put("tags",JSONArray(snapshot.tags.map { text(it,40) })).put("story",story(entry,document.sourceCookId!=null)).put("assets",JSONArray(assets)).put("source",source(snapshot.publicSource))
+                .put("tags",JSONArray(snapshot.tags.map { text(it,40) })).put("story",storyValue).put("assets",JSONArray(assets)).put("source",source(snapshot.publicSource))
         }
         val attempts=recipes.mapNotNull { it.optJSONObject("story")?.getString("attemptId") };require(attempts.distinct().size==attempts.size) { "Include each recorded attempt once in a public collection." }
         val first=selected.first().snapshot.publicSource;val common=first?.takeIf { selected.all { e->e.snapshot.publicSource?.let { it.itemId==first.itemId && it.revisionId==first.revisionId }==true } }
         val payload=JSONObject().put("contractVersion",1).put("kind",kind).put("identityMode",document.identityMode).put("category",document.categoryId).put("title",text(document.title,160))
             .put("recipes",JSONArray(recipes)).put("source",source(common)).put("measuredAttemptId",if(kind=="attempt")recipes[0].getJSONObject("story").getString("attemptId") else JSONObject.NULL)
             .put("heroAssetId",document.heroPhotoId?.let { id("photo:$it") } ?: JSONObject.NULL)
+        if(sessionRaw!=null)payload.put("session",sessionObject(sessionRaw))
         return pack(payload,images)
     }
     fun pack(payload: JSONObject, photos: Map<String,ByteArray>): PreparedPublication {
