@@ -4,15 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       release_track:
-        description: Upload to Alpha closed testing or start a staged production rollout.
+        description: Upload to Alpha closed testing, Beta open testing (live ads), or start a staged production rollout.
         required: true
         type: choice
         options:
           - alpha
+          - beta
           - production
         default: alpha
       confirm_production_readiness:
-        description: Confirm Play production access, required store disclosures, and UMP setup are complete.
+        description: Confirm the required store disclosures and UMP setup are complete (plus Play production access for the production track). Required for Beta and production.
         required: true
         type: boolean
         default: false
@@ -53,8 +54,12 @@ jobs:
           ROLLOUT_FRACTION: ${{ inputs.rollout_fraction }}
         run: |
           set -euo pipefail
-          if [[ "$RELEASE_TRACK" != "alpha" && "$RELEASE_TRACK" != "production" ]]; then
-            echo "::error::Choose the Alpha or production Play track."
+          if [[ "$RELEASE_TRACK" != "alpha" && "$RELEASE_TRACK" != "beta" && "$RELEASE_TRACK" != "production" ]]; then
+            echo "::error::Choose the Alpha, Beta, or production Play track."
+            exit 1
+          fi
+          if [[ "$RELEASE_TRACK" == "beta" && "$CONFIRM_PRODUCTION_READINESS" != "true" ]]; then
+            echo "::error::Beta is the public open-testing track and ships live ads. Publishing requires confirmation that the required Play disclosures and UMP setup are complete."
             exit 1
           fi
           if [[ "$RELEASE_TRACK" == "production" && "$CONFIRM_PRODUCTION_READINESS" != "true" ]]; then
@@ -141,19 +146,30 @@ jobs:
           echo "name=0.1.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       # These KSP variants export Room schemas to the same directory, so keep them in separate Gradle invocations.
+      # Open testing (beta) and production ship live ads; Alpha closed testing keeps test ads.
       - name: Run unit tests
         env:
-          PITTECH_LIVE_ADS: ${{ inputs.release_track == 'production' }}
+          PITTECH_LIVE_ADS: ${{ inputs.release_track == 'production' || inputs.release_track == 'beta' }}
         run: gradle --no-daemon testDebugUnitTest -PpittechLiveAds=${PITTECH_LIVE_ADS}
 
       - name: Build release bundle with the track's ad unit
         env:
-          PITTECH_LIVE_ADS: ${{ inputs.release_track == 'production' }}
+          PITTECH_LIVE_ADS: ${{ inputs.release_track == 'production' || inputs.release_track == 'beta' }}
         run: >-
           gradle --no-daemon bundleRelease
           -PpittechLiveAds=${PITTECH_LIVE_ADS}
           -PpittechVersionCode=${{ steps.version.outputs.code }}
           -PpittechVersionName=${{ steps.version.outputs.name }}
+
+      - name: Verify the bundle carries the track's ad unit
+        env:
+          PITTECH_LIVE_ADS: ${{ inputs.release_track == 'production' || inputs.release_track == 'beta' }}
+        run: |
+          if [[ "$PITTECH_LIVE_ADS" == "true" ]]; then mode=live; else mode=test; fi
+          scripts/verify-bundle-ad-unit.sh \
+            app/build/outputs/bundle/release/app-release.aab \
+            "$mode" \
+            app/build/generated/source/buildConfig/release/com/pittech/BuildConfig.java
 
       - name: Sign bundle with the existing Play upload key
         env:
@@ -206,6 +222,19 @@ jobs:
           releaseName: alpha-${{ github.run_number }}
           tracks: alpha
           # Alpha already has an active release; make this update available to enrolled testers.
+          status: completed
+
+      - name: Publish to Play Beta open testing
+        if: inputs.release_track == 'beta'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJson: ${{ steps.google-auth.outputs.credentials_file_path }}
+          packageName: com.pittech
+          releaseFiles: app/build/outputs/bundle/release/app-release-signed.aab
+          whatsNewDirectory: distribution/play/whatsnew
+          releaseName: beta-${{ github.run_number }}
+          tracks: beta
+          # Open testing is a public track; a completed release is available to all open testers.
           status: completed
 
       - name: Publish staged production rollout

@@ -1,8 +1,10 @@
 # Play release workflow
 
-The manually triggered Play release workflow builds, tests, signs, and uploads an Android App Bundle from main. Its release track input defaults to Alpha closed testing, which uses Google's native test ad unit. Choose production only after completing the Play checks in PRODUCTION_RELEASE_READINESS.md and selecting the production-readiness confirmation. Production uploads use PitTech's live AdMob unit and start an in-progress rollout at the selected 5%, 10%, 25%, or 50% user fraction. The default fraction is 10%; increase rollout later in Play Console after monitoring. AdMob may limit or delay serving until its app-ads.txt verification and app-readiness review are complete.
+The manually triggered Play release workflow builds, tests, signs, and uploads an Android App Bundle from main. Its release track input defaults to Alpha closed testing, which uses Google's native test ad unit. Choose Beta for open testing: Beta is a public track and ships PitTech's live AdMob unit (owner decision 2026-10-29, issue #251), and it requires the same readiness confirmation as production — the required store disclosures and UMP setup must be complete. Before uploading to Beta, check the open-testing track in Play Console: a new upload replaces the release currently on that track, so the open-beta release sent for review in October 2026 must be resolved or deliberately superseded first. Choose production only after completing the Play checks in PRODUCTION_RELEASE_READINESS.md and selecting the production-readiness confirmation. Production uploads use PitTech's live AdMob unit and start an in-progress rollout at the selected 5%, 10%, 25%, or 50% user fraction. The default fraction is 10%; increase rollout later in Play Console after monitoring. AdMob may limit or delay serving until its app-ads.txt verification and app-readiness review are complete.
 
-The workflow runs JVM unit tests, validates its signing and Google service-account secrets, signs with the existing Play upload key, authenticates to Google Cloud, and uploads to the selected Play track. Keep the workflow at .github/workflows/play-closed-testing.yml: Alpha and production share one GitHub Actions run counter, which keeps Android version codes increasing across both tracks.
+Whichever track is chosen, the workflow verifies the built bundle before signing it: `scripts/verify-bundle-ad-unit.sh` fails the run unless the bundle's compiled configuration carries the track's ad unit — the live unit for Beta and production, the test unit for Alpha — so a mis-flagged build can never be uploaded.
+
+The workflow runs JVM unit tests, validates its signing and Google service-account secrets, signs with the existing Play upload key, authenticates to Google Cloud, and uploads to the selected Play track. Keep the workflow at .github/workflows/play-closed-testing.yml: Alpha, Beta, and production share one GitHub Actions run counter, which keeps Android version codes increasing across all tracks.
 
 ## Required GitHub Actions secrets
 
@@ -12,7 +14,7 @@ Add these as repository Actions secrets:
 - ANDROID_KEYSTORE_PASSWORD
 - ANDROID_KEY_ALIAS
 - ANDROID_KEY_PASSWORD
-- GCP_SERVICE_ACCOUNT_JSON — raw JSON key for a Google Cloud service account with Play Console access to the tracks you intend to publish to. Production requires production-release access; the previous successful Alpha upload only verified its Alpha permissions.
+- GCP_SERVICE_ACCOUNT_JSON — raw JSON key for a Google Cloud service account with Play Console access to the tracks you intend to publish to. Production requires production-release access; the previous successful Alpha upload only verified its Alpha permissions, so confirm the account can release to the open-testing track before the first Beta run.
 
 Do not commit the keystore or service-account JSON, and do not paste either into an issue or pull request. Do not generate a replacement upload key for this workflow: it must match the upload certificate already registered for the app.
 

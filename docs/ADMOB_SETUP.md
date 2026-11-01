@@ -17,9 +17,9 @@ The publisher file is privacy-site/app-ads.txt. It was also checked on the live 
 
 ## Test and release behavior
 
-Local and pull-request builds use Google's test unit. Debug builds always use the test unit, even if pittechLiveAds=true is passed. Alpha closed testing also uses the test unit. The production option in the Play release workflow builds with PitTech's live unit and starts a staged rollout after explicit readiness confirmation.
+Local and pull-request builds use Google's test unit. Debug builds always use the test unit, even if pittechLiveAds=true is passed. Alpha closed testing also uses the test unit. The production option in the Play release workflow builds with PitTech's live unit and starts a staged rollout after explicit readiness confirmation. The workflow's Beta option (open testing) also builds with the live unit — the open beta carries live ads by owner decision (2026-10-29, issue #251) — after the same readiness confirmation, and the workflow verifies from the built bundle that the live unit is the one compiled in before anything is signed or uploaded. Firebase Dev builds always pass pittechLiveAds=false and keep the test unit.
 
-Before that production option is used, confirm in Play Console and AdMob that:
+Before a public option (Beta open testing or production) is used, confirm in Play Console and AdMob that:
 
 - The public store listing is available and the app is linked as published in AdMob.
 - The developer website in the Play listing serves the app-ads.txt file and AdMob shows it as verified.
