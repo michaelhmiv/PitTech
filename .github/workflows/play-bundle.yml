@@ -45,6 +45,16 @@ jobs:
           PITTECH_LIVE_ADS: ${{ github.event_name == 'workflow_dispatch' && inputs.use_live_ads }}
         run: gradle bundleRelease -PpittechLiveAds=${PITTECH_LIVE_ADS}
 
+      - name: Verify the bundle carries the expected ad unit
+        env:
+          PITTECH_LIVE_ADS: ${{ github.event_name == 'workflow_dispatch' && inputs.use_live_ads }}
+        run: |
+          if [[ "$PITTECH_LIVE_ADS" == "true" ]]; then mode=live; else mode=test; fi
+          scripts/verify-bundle-ad-unit.sh \
+            app/build/outputs/bundle/release/app-release.aab \
+            "$mode" \
+            app/build/generated/source/buildConfig/release/com/pittech/BuildConfig.java
+
       - name: Upload unsigned Play App Bundle
         uses: actions/upload-artifact@v7.0.1
         with:

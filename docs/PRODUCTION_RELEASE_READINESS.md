@@ -23,7 +23,7 @@ The new native ad placement is the first row in the Cooks list whenever UMP perm
 5. In AdMob, configure UMP messages and verify the app's consent flow. The repository previously recorded the app as unpublished and its UMP messages as unconfigured; the AdMob console was not available during this audit. Link the app to the public Play listing and verify app-ads.txt in AdMob. App-readiness approval is needed for full ad serving but may follow first publication; until approved, live ads can be limited or absent.
 6. In GitHub Actions, choose Play release, select production, leave or set the staged rollout fraction, and check the production-readiness confirmation only after steps 1–4 are complete and UMP is configured. Review the signed-bundle artifact and Play Console rollout after the run; increase the rollout in Play Console after monitoring. Do not treat the ad slot as a guarantee of an impression.
 
-The Play workflow reuses the existing play-closed-testing.yml path so Alpha and production releases continue sharing one monotonic GitHub Actions run counter for versionCode. Keep this path fixed unless the version-code scheme is deliberately migrated.
+The Play workflow reuses the existing play-closed-testing.yml path so Alpha, Beta, and production releases continue sharing one monotonic GitHub Actions run counter for versionCode. Keep this path fixed unless the version-code scheme is deliberately migrated.
 
 ## Railway state
 
