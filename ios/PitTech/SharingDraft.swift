@@ -23,6 +23,18 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
     var sourceHistory: JSONValue?
     var entries: [NativeSharingEntry]
     var card: ShareCardOptions? = nil
+    /// The source cook's recorded session facts (smoker, setpoint, fuel,
+    /// wood, weather, serve-plan target) captured when the draft was
+    /// created from a meal — Publishable Cooks, issue #250. Recorded
+    /// facts, not editable content: `saveSharingDraft` rejects a draft
+    /// that changes them. Nil for drafts that did not come from a
+    /// recorded cook session. On the wire this is the draft codec's
+    /// `session` object, symmetric with Android's SharingDraft codec.
+    var sessionJson: JSONValue? = nil
+    private enum CodingKeys: String, CodingKey {
+        case version, title, sourceCookId, identityMode, category, heroPhotoId, collectionId, parentRevisionId, sourceHistory, entries, card
+        case sessionJson = "session"
+    }
     var cardOptions: ShareCardOptions { card ?? ShareCardOptions() }
     func validate() throws {
         try cardOptions.validate()
@@ -54,6 +66,11 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
             try facts.validate()
         }
         if let heroPhotoId, !entries.contains(where: { $0.included && $0.photoIds.contains(heroPhotoId) }) { throw PitTechArchiveError.invalidArchive }
+        if let sessionJson {
+            guard let session = sessionJson.objectValue, let started = session["startedAtUtcMillis"]?.numberValue, (1...253402300799999).contains(started) else { throw PitTechArchiveError.invalidArchive }
+            for key in ["smokerName", "fuelType", "woodOrPelletBlend"] where (session[key]?.stringValue?.count ?? 0) > 160 { throw PitTechArchiveError.invalidArchive }
+            for key in ["weatherNotes", "windNotes", "notes"] where (session[key]?.stringValue?.count ?? 0) > 2000 { throw PitTechArchiveError.invalidArchive }
+        }
     }
     private static func storedFoodType(_ entries: JSONValue?) -> String? {
         guard let snapshotJson = entries?.arrayValue?.first?.objectValue?["snapshotJson"]?.stringValue,
@@ -164,17 +181,55 @@ extension PitTechLibrary {
                 return entry
             }
             let history = try NativeCookPackHistory.freeze(prior, cookId: cookId, dishIds: dishIds, copiedPhotos: copiedPhotos)
-            let document = NativeSharingDocument(title: String(cook.title.prefix(160)), sourceCookId: cookId, category: sharingCategory(for: entries), sourceHistory: history, entries: entries)
+            let document = NativeSharingDocument(title: String(cook.title.prefix(160)), sourceCookId: cookId, category: sharingCategory(for: entries), sourceHistory: history, entries: entries, sessionJson: sessionCapture(cookId: cookId))
             try document.validate(); let now = Date.now.timeIntervalSince1970 * 1000
             library.companionRecords.append(.object(["id": .string(id), "kind": .string("sharing_draft"), "title": .string(document.title), "payload": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(document)), "created": .number(now), "updated": .number(now)]))
             try library.validateSharingDocuments(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) }; return id
         } catch { library = prior; copied.forEach { try? FileManager.default.removeItem(at: photoURL($0)) }; throw error }
+    }
+    /// Publishable Cooks (issue #250): the recorded session facts a cook
+    /// publication carries, captured from the cook itself plus the serve
+    /// plan that started it (its planned serve time), when one exists.
+    /// Everything is the cook's own recorded data — nothing is asked of
+    /// the author. Mirrors Android's SharingRepository.sessionCapture.
+    func sessionCapture(cookId: String) -> JSONValue? {
+        guard let cook = library.cooks.first(where: { $0.id == cookId }) else { return nil }
+        let upcoming = library.companionRecords.compactMap(\.objectValue)
+            .filter { $0["kind"]?.stringValue == "upcoming" }
+            .compactMap { $0["payload"]?.stringValue }
+            .compactMap { try? ServeTimePlanner.decodeString($0) }
+            .first { $0.startedCookId == cookId }
+        let serveAt = upcoming?.serveAtUtcMillis ?? serveGoal(cookId: cookId)?.serveAtUtcMillis
+        func text(_ value: String?, _ limit: Int) -> JSONValue {
+            guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return .null }
+            return .string(String(trimmed.prefix(limit)))
+        }
+        func number(_ value: Double?) -> JSONValue { value.map(JSONValue.number) ?? .null }
+        func millis(_ value: Int64?) -> JSONValue { value.map { .number(Double($0)) } ?? .null }
+        // Built in steps: one dictionary literal for all fourteen facts
+        // exceeds what the type checker will take in reasonable time.
+        var session: [String: JSONValue] = [:]
+        session["startedAtUtcMillis"] = .number(Double(cook.startedAtUtcMillis))
+        session["endedAtUtcMillis"] = millis(cook.endedAtUtcMillis)
+        session["smokerName"] = text(cook.smokerName, 160)
+        session["fuelType"] = text(cook.fuelType, 160)
+        session["woodOrPelletBlend"] = text(cook.woodOrPelletBlend, 160)
+        session["setpointValue"] = number(cook.initialSetpointValue)
+        session["setpointUnit"] = text(cook.initialSetpointUnit, 16)
+        session["outdoorTemperatureValue"] = number(cook.outdoorTemperatureValue)
+        session["outdoorTemperatureUnit"] = text(cook.outdoorTemperatureUnit, 16)
+        session["weatherNotes"] = .string(String((cook.weatherNotes ?? "").prefix(2000)))
+        session["windNotes"] = .string(String((cook.windNotes ?? "").prefix(2000)))
+        session["notes"] = .string(String((cook.notes ?? "").prefix(2000)))
+        session["serveAtUtcMillis"] = millis(serveAt)
+        return .object(session)
     }
     func saveSharingDraft(_ id: String, document: NativeSharingDocument, expectedUpdated: Double) throws {
         guard let index = library.companionRecords.firstIndex(where: { $0.objectValue?["id"]?.stringValue == id }), let record = sharingRecord(id), record["kind"]?.stringValue == "sharing_draft",
               record["updated"]?.numberValue == expectedUpdated else { throw RecipeError.changed }
         let before = try sharingDocument(id); try document.validate()
         guard document.sourceHistory == before.sourceHistory else { throw PitTechArchiveError.invalidArchive }
+        guard document.sessionJson == before.sessionJson else { throw PitTechArchiveError.invalidArchive }
         guard document.entries.allSatisfy({ entry in before.entries.contains { $0.id == entry.id && $0.story == entry.story } }) else { throw PitTechArchiveError.invalidArchive }
         let prior = library; var updated = record
         do {

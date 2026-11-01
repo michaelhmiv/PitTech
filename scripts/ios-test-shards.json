@@ -84,6 +84,7 @@
     "PublicDiscoveryTests",
     "PublicLinkTests",
     "PublicationAcceptanceTests",
+    "PublicationCookTests",
     "PublicationOperationsTests",
     "RecipeCompatibilityTests",
     "RecipeCompositionTests",

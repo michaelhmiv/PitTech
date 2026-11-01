@@ -14,6 +14,11 @@ struct NativePublicStoryView: View {
         let maximum = all.indices.max { (all[$0]["valueCelsius"]?.numberValue ?? 0) < (all[$1]["valueCelsius"]?.numberValue ?? 0) }
         return all.enumerated().filter { $0.offset % stride == 0 || $0.offset == all.count - 1 || $0.offset == minimum || $0.offset == maximum }.map(\.element)
     }
+    private func spritzLabel(_ inputs: [String: JSONValue]) -> String {
+        guard let spritz = inputs["spritz"]?.boolValue else { return CookInputVocabulary.notRecordedLabel }
+        guard spritz else { return "No" }
+        return "Yes" + (inputs["spritzMedium"]?.stringValue.map { " · " + $0 } ?? "")
+    }
     private func time(_ offset: Double) -> String { RecipeReferenceTimeline.relative(offset - (story["foodOnOffsetMillis"]?.numberValue ?? 0)) }
     private func valueDescription(_ point: [String: JSONValue]) -> String {
         let celsius = point["valueCelsius"]?.numberValue ?? 0
@@ -53,6 +58,21 @@ struct NativePublicStoryView: View {
                 }
             }
             if let off = story["foodOffOffsetMillis"]?.numberValue { Text("Recorded Food off · " + time(off)).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
+            // Publishable Cooks (issue #250): the dish's recorded inputs,
+            // lifted into the story at publish time. Only cook
+            // publications carry the key; a null value means the cook
+            // recorded no inputs, and fields read as not recorded —
+            // never guessed.
+            if let inputsValue = story["inputs"] {
+                Text("Cook inputs").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                if let inputs = inputsValue.objectValue {
+                    Text("Wrap · " + (inputs["wrapMaterial"]?.stringValue.flatMap { WrapMaterial.fromArchive($0)?.label } ?? CookInputVocabulary.notRecordedLabel)).font(PitTechFont.body)
+                    Text("Rub · " + (inputs["rub"]?.stringValue ?? CookInputVocabulary.notRecordedLabel)).font(PitTechFont.body)
+                    Text("Spritz · " + spritzLabel(inputs)).font(PitTechFont.body)
+                } else {
+                    Text(CookInputVocabulary.notRecordedLabel).font(PitTechFont.body)
+                }
+            }
             if let verdict = story["verdict"]?.objectValue {
                 if let rating = verdict["rating"]?.numberValue {
                     HStack(spacing: 10) {
@@ -66,6 +86,114 @@ struct NativePublicStoryView: View {
         }
     }
 }
+/// Formatting shared by the two renderings of a published cook session
+/// (the Discover detail page and the publisher's own preview), mirroring
+/// Android's PublicSessionView.
+enum PublicSessionFormat {
+    static func temperature(value: Double, unit: String, readerUnit: String) -> String {
+        let converted: Double = if unit == readerUnit { value } else if unit == "°C", readerUnit == "°F" { value * 9 / 5 + 32 } else if unit == "°F", readerUnit == "°C" { (value - 32) * 5 / 9 } else { value }
+        let shown = ["°C", "°F"].contains(unit) ? readerUnit : unit
+        return jsNumber(converted) + " " + shown
+    }
+    static func durationLabel(millis: Double) -> String {
+        let minutes = Int64(millis) / 60_000
+        return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+    }
+    /// JS `String(number)` shape: integral values carry no decimal point.
+    static func jsNumber(_ value: Double) -> String {
+        if value.isFinite, value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
+        return String(value)
+    }
+    static func facts(session: [String: JSONValue], temperatureUnit: String) -> (facts: [String], weather: String?, notes: String?) {
+        var facts: [String] = []
+        if let smoker = session["smokerName"]?.stringValue { facts.append("Smoker · " + smoker) }
+        if let setpoint = session["setpoint"]?.objectValue, let value = setpoint["value"]?.numberValue, let unit = setpoint["unit"]?.stringValue {
+            facts.append("Ran at " + temperature(value: value, unit: unit, readerUnit: temperatureUnit))
+        }
+        if let fuel = session["fuelType"]?.stringValue { facts.append("Fuel · " + fuel) }
+        if let wood = session["woodOrPelletBlend"]?.stringValue { facts.append("Wood · " + wood) }
+        if let duration = session["durationMillis"]?.numberValue { facts.append("Cooked for " + durationLabel(millis: duration)) }
+        if let serve = session["serveAtOffsetMillis"]?.numberValue { facts.append("Serve time " + RecipeReferenceTimeline.relative(serve)) }
+        var weather: [String] = []
+        if let outdoor = session["outdoorTemperatureValue"]?.numberValue {
+            let unit = session["outdoorTemperatureUnit"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? temperatureUnit
+            weather.append(temperature(value: outdoor, unit: unit, readerUnit: temperatureUnit))
+        }
+        if let notes = session["weatherNotes"]?.stringValue, !notes.isEmpty { weather.append(notes) }
+        if let wind = session["windNotes"]?.stringValue, !wind.isEmpty { weather.append(wind) }
+        let notes = session["notes"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+        return (facts, weather.isEmpty ? nil : weather.joined(separator: " · "), notes)
+    }
+}
+
+/// Publishable Cooks (issue #250): the session header of a cook
+/// publication — the event the dishes shared. Rendered from the
+/// payload's session object on both the public detail page and the
+/// publisher's own preview.
+struct NativePublicSessionView: View {
+    let session: [String: JSONValue]
+    let temperatureUnit: String
+    var body: some View {
+        let rendered = PublicSessionFormat.facts(session: session, temperatureUnit: temperatureUnit)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("The cook").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            ForEach(rendered.facts.indices, id: \.self) { index in Text(rendered.facts[index]).font(PitTechFont.body) }
+            if let weather = rendered.weather { Text(weather).font(PitTechFont.body) }
+            if let notes = rendered.notes { Text(notes).font(PitTechFont.body) }
+        }.accessibilityIdentifier("public-session")
+    }
+}
+
+/// The shared timeline of a cook publication: every dish's milestones
+/// placed on the one session clock (story anchor offset + milestone
+/// offset). Events recorded once for the whole session appear in
+/// several dishes' stories under the same milestone id and are shown
+/// once, unlabeled; dish events carry their dish's name. View-only —
+/// saving a cook forks its dishes as recipes; the session itself never
+/// transfers (issue #250, Option A).
+struct NativePublicSessionTimeline: View {
+    let detail: NativePublicDetail
+    private var merged: (rows: [(offset: Double, text: String, dish: String?)], unplaced: Bool) {
+        var byId: [String: (offset: Double, text: String, dishes: Set<String>)] = [:]
+        var order: [String] = []
+        var unplaced = false
+        for recipeValue in detail.recipes {
+            guard let recipe = recipeValue.objectValue, let story = recipe["story"]?.objectValue else { continue }
+            let milestones = (story["milestones"]?.arrayValue ?? []).compactMap(\.objectValue)
+            guard let anchor = story["anchorOffsetMillis"]?.numberValue else { if !milestones.isEmpty { unplaced = true }; continue }
+            for milestone in milestones {
+                guard let id = milestone["id"]?.stringValue else { continue }
+                let title = recipe["title"]?.stringValue ?? "Dish"
+                if var existing = byId[id] { existing.dishes.insert(title); byId[id] = existing }
+                else { byId[id] = (anchor + (milestone["offsetMillis"]?.numberValue ?? 0), milestone["text"]?.stringValue ?? "", [title]); order.append(id) }
+            }
+        }
+        let rows = order.compactMap { byId[$0] }.map { (offset: $0.offset, text: $0.text, dish: $0.dishes.count == 1 ? $0.dishes.first : nil) }
+            .sorted { ($0.offset, $0.dish ?? "", $0.text) < ($1.offset, $1.dish ?? "", $1.text) }
+        return (rows, unplaced)
+    }
+    var body: some View {
+        let merged = merged
+        if !merged.rows.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Shared timeline").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                TurnInBannerText("One timeline for the whole cook")
+                ForEach(merged.rows.indices, id: \.self) { index in
+                    let row = merged.rows[index]
+                    HStack(alignment: .top, spacing: 10) {
+                        Text(RecipeReferenceTimeline.relative(row.offset)).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.emberText)
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let dish = row.dish { Text(dish).font(PitTechFont.bodySmall).foregroundStyle(PitTechStyle.inkMuted) }
+                            Text(row.text).font(PitTechFont.body)
+                        }
+                    }
+                }
+                if merged.unplaced { Text("One dish's story couldn't be placed on the session clock; its own timeline is in its story below.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted) }
+            }.accessibilityIdentifier("public-session-timeline")
+        }
+    }
+}
+
 struct NativePublicAdditionalPhoto: View {
     @Environment(NativePublicCoordinator.self) private var community
     let detail: NativePublicDetail

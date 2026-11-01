@@ -14,8 +14,12 @@ struct NativePreparedPublication: Sendable {
 }
 enum NativePublicationError: LocalizedError {
     case invalid, limits, accountChanged, pending
+    /// A rejection whose copy is part of the feature's contract (the
+    /// Publishable Cooks session-window wording is shared with Android).
+    case message(String)
     var errorDescription: String? {
         switch self {
+        case .message(let text): return text
         case .limits: return "This public preview exceeds the sharing limits. Choose fewer dishes, photos or recorded stories."
         case .accountChanged: return "Sign in with the account that started this publication to recover it. Your draft stays on this device."
         case .pending: return "Recover the previous publication before starting another. Its exact preview is saved on this device."
@@ -106,10 +110,84 @@ enum NativePublicationProjection {
             "verdict": .object(["rating": rating.map(JSONValue.number) ?? .null, "cookAgain": again.map { .bool($0 == 1) } ?? .null, "notes": try text(notes, 2000)]),
             "gaps": .array(gaps)]) // Local outage markers have unknown duration; never invent an end time.
     }
+    /// The payload session object for a cook publication, rebuilt from the
+    /// draft's captured session facts with times rebased to session-relative
+    /// offsets (the payload stays relative-timing only, like every story).
+    private static func sessionObject(_ sessionRaw: [String: JSONValue]) throws -> JSONValue {
+        guard let started = sessionRaw["startedAtUtcMillis"]?.numberValue else { throw NativePublicationError.invalid }
+        let ended = sessionRaw["endedAtUtcMillis"]?.numberValue
+        func str(_ key: String) -> JSONValue { sessionRaw[key]?.stringValue.map(JSONValue.string) ?? .null }
+        let setpoint: JSONValue = if let value = sessionRaw["setpointValue"]?.numberValue, let unit = sessionRaw["setpointUnit"]?.stringValue {
+            .object(["value": .number(value), "unit": .string(unit)])
+        } else { .null }
+        // Built in steps (the type checker times out on this as one literal).
+        var session: [String: JSONValue] = [:]
+        session["smokerName"] = str("smokerName")
+        session["fuelType"] = str("fuelType")
+        session["woodOrPelletBlend"] = str("woodOrPelletBlend")
+        session["setpoint"] = setpoint
+        session["outdoorTemperatureValue"] = sessionRaw["outdoorTemperatureValue"]?.numberValue.map(JSONValue.number) ?? .null
+        session["outdoorTemperatureUnit"] = str("outdoorTemperatureUnit")
+        session["weatherNotes"] = .string(sessionRaw["weatherNotes"]?.stringValue ?? "")
+        session["windNotes"] = .string(sessionRaw["windNotes"]?.stringValue ?? "")
+        session["notes"] = .string(sessionRaw["notes"]?.stringValue ?? "")
+        session["serveAtOffsetMillis"] = try sessionRaw["serveAtUtcMillis"]?.numberValue.map { try offset($0 - started) } ?? .null
+        session["durationMillis"] = try ended.flatMap { $0 - started >= 0 ? $0 - started : nil }.map { try offset($0) } ?? .null
+        return .object(session)
+    }
+    /// Publishable Cooks (issue #250): place an actual dish story on the
+    /// session clock and lift its recorded cook inputs into the story, so
+    /// the publication renders one shared timeline and per-dish inputs
+    /// without the private results rows. Frozen stories (owner updates of
+    /// an existing cook publication) already carry both from their
+    /// original publication and are left untouched — recorded facts stay
+    /// frozen.
+    private static func placeOnSession(_ entry: NativeSharingEntry, story: inout [String: JSONValue], sessionRaw: [String: JSONValue]) throws {
+        let raw = entry.story.objectValue ?? [:]
+        if let frozen = raw["publicStory"], frozen != .null { return }
+        guard let started = sessionRaw["startedAtUtcMillis"]?.numberValue else { throw NativePublicationError.invalid }
+        let ended = sessionRaw["endedAtUtcMillis"]?.numberValue
+        let observations = (raw["observations"]?.arrayValue ?? []).compactMap(\.objectValue)
+        let readings = (raw["readings"]?.arrayValue ?? []).compactMap(\.objectValue)
+        let anchor = raw["anchorUtcMillis"]?.numberValue
+        let origin = anchor ?? (observations.compactMap { $0["occurredAtUtcMillis"]?.numberValue } + readings.compactMap { $0["measuredAtUtcMillis"]?.numberValue }).min()
+        if let origin {
+            guard origin >= started, ended.map({ origin <= $0 }) ?? true else {
+                throw NativePublicationError.message("A dish's recorded story doesn't belong to this cook session, so it can't join the cook publication. Exclude it, or publish the meal as a collection instead.")
+            }
+            story["anchorOffsetMillis"] = try offset(origin - started)
+        } else { story["anchorOffsetMillis"] = .null }
+        story["inputs"] = cookInputs(raw) ?? .null
+    }
+    private static func cookInputs(_ raw: [String: JSONValue]) -> JSONValue? {
+        // The story's results are the dish's own rows; the derivation
+        // mirrors CookInputVocabulary.fromResults (a spritz action on the
+        // timeline is a recorded YES even when the prompt went unanswered).
+        let results = (raw["results"]?.arrayValue ?? []).compactMap(\.objectValue)
+        func result(_ type: String) -> String? {
+            results.first { $0["type"]?.stringValue == type }?["textValue"]?.stringValue.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        }
+        let wrap = result(CookInputVocabulary.typeWrapMaterial).flatMap { WrapMaterial.fromArchive($0)?.rawValue }
+        let rub = result(CookInputVocabulary.typeRub)
+        var spritz: Bool? = switch result(CookInputVocabulary.typeSpritz) { case "yes": true; case "no": false; default: nil }
+        if spritz == nil, (raw["observations"]?.arrayValue ?? []).compactMap(\.objectValue).contains(where: { $0["action"]?.stringValue == "spritz" }) { spritz = true }
+        let medium = result(CookInputVocabulary.typeSpritzMedium)
+        guard wrap != nil || rub != nil || spritz != nil || medium != nil else { return nil }
+        return .object(["wrapMaterial": wrap.map(JSONValue.string) ?? .null, "rub": rub.map(JSONValue.string) ?? .null,
+            "spritz": spritz.map(JSONValue.bool) ?? .null, "spritzMedium": medium.map(JSONValue.string) ?? .null])
+    }
     static func build(_ document: NativeSharingDocument, updated: Double, photos: [NativePublicationPhoto], kind: String) throws -> NativePreparedPublication {
         try document.validate(); let selected = document.entries.filter(\.included)
-        guard (1...20).contains(selected.count), ["recipe", "collection", "attempt"].contains(kind), kind != "recipe" || selected.count == 1,
+        guard (1...20).contains(selected.count), ["recipe", "collection", "attempt", "cook"].contains(kind), kind != "recipe" || selected.count == 1,
               kind != "attempt" || document.sourceCookId != nil && selected.count == 1 && selected[0].includeStory else { throw NativePublicationError.invalid }
+        // A cook publication IS the recorded session: it needs the captured
+        // session facts and every selected dish's story. A dish without its
+        // story is excluded from the cook, never published story-less.
+        guard kind != "cook" || document.sessionJson != nil && selected.allSatisfy(\.includeStory) else {
+            throw NativePublicationError.message("A cook publication needs the recorded session and every dish's story. Exclude a dish to leave it out of the cook.")
+        }
+        let sessionRaw: [String: JSONValue]? = kind == "cook" ? document.sessionJson?.objectValue : nil
+        if kind == "cook", sessionRaw == nil { throw NativePublicationError.invalid }
         var publicPhotos: [String: Data] = [:], recipes: [JSONValue] = [], expanded = 0
         for entry in selected {
             try Task.checkCancellation(); let snapshot = try entry.snapshot
@@ -138,18 +216,25 @@ enum NativePublicationProjection {
                 publicPhotos[assetId] = bytes
                 assets.append(.object(["id": .string(assetId), "path": .string(path), "mimeType": .string("image/jpeg"), "sha256": .string(NativeRelayProtocol.hash(bytes)), "caption": try text(photo.caption, 2000)]))
             }
+            var storyValue = try story(entry, actualMeal: document.sourceCookId != nil)
+            if let sessionRaw, var storyObject = storyValue.objectValue {
+                try placeOnSession(entry, story: &storyObject, sessionRaw: sessionRaw)
+                storyValue = .object(storyObject)
+            }
             recipes.append(.object(["id": .string(id("recipe:" + entry.id)), "revisionId": .string(id("revision:" + entry.id + ":" + String(Int64(updated)))),
                 "title": try text(snapshot.name, 160), "description": try text(snapshot.description, 2000), "foodType": try text(setup["foodType"]?.stringValue ?? "", 160), "cut": try optional(setup["cut"]?.stringValue, 160),
                 "weightGrams": grams.map(JSONValue.number) ?? .null, "method": .null, "ingredients": .array(ingredients), "instructions": .array(instructions), "tags": .array(try snapshot.tags.map { try text($0, 40) }),
-                "story": try story(entry, actualMeal: document.sourceCookId != nil), "assets": .array(assets), "source": source(snapshot.publicSource)]))
+                "story": storyValue, "assets": .array(assets), "source": source(snapshot.publicSource)]))
         }
         let attempts = recipes.compactMap { $0.objectValue?["story"]?.objectValue?["attemptId"]?.stringValue }
         guard Set(attempts).count == attempts.count else { throw NativePublicationError.invalid }
         let roots = try selected.map { try $0.snapshot.publicSource }
         let commonSource: PublicRecipeSource? = roots.first.flatMap { first in guard let first, roots.allSatisfy({ $0?.itemId == first.itemId && $0?.revisionId == first.revisionId }) else { return nil }; return first }
-        let payload: JSONValue = .object(["contractVersion": .number(1), "kind": .string(kind), "identityMode": .string(document.identityMode), "category": .string(document.category), "title": try text(document.title, 160), "recipes": .array(recipes),
+        var payloadObject: [String: JSONValue] = ["contractVersion": .number(1), "kind": .string(kind), "identityMode": .string(document.identityMode), "category": .string(document.category), "title": try text(document.title, 160), "recipes": .array(recipes),
             "source": source(commonSource), "measuredAttemptId": kind == "attempt" ? recipes[0].objectValue?["story"]?.objectValue?["attemptId"] ?? .null : .null,
-            "heroAssetId": document.heroPhotoId.map { .string(id("photo:" + $0)) } ?? .null])
+            "heroAssetId": document.heroPhotoId.map { .string(id("photo:" + $0)) } ?? .null]
+        if let sessionRaw { payloadObject["session"] = try sessionObject(sessionRaw) }
+        let payload: JSONValue = .object(payloadObject)
         return try package(payload, photos: publicPhotos)
     }
     static func package(_ payload: JSONValue, photos: [String: Data]) throws -> NativePreparedPublication {

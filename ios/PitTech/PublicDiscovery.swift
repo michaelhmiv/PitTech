@@ -37,7 +37,7 @@ struct NativePublicItem: Decodable, Identifiable {
     func validate() throws {
         try credit.validate()
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, (1...160).contains(title.utf16.count), credit.displayName.utf16.count <= 160,
-              ["recipe", "collection", "attempt"].contains(kind), (0...1_000_000_000).contains(likes), (0...1_000_000_000).contains(forks), heroAssetId.map({ UUID(uuidString: $0) != nil }) ?? true else { throw NativePublicError.invalid }
+              ["recipe", "collection", "attempt", "cook"].contains(kind), (0...1_000_000_000).contains(likes), (0...1_000_000_000).contains(forks), heroAssetId.map({ UUID(uuidString: $0) != nil }) ?? true else { throw NativePublicError.invalid }
     }
 }
 extension NativePublicItem {

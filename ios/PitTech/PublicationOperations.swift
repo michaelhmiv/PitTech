@@ -18,7 +18,7 @@ struct NativePublicationReceipt: Codable, Equatable, Sendable {
     var status: String? = nil
     func validate() throws {
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, revision > 0,
-              url == "\(NativeOnlineConfiguration.current.publicOrigin)/c/" + id, (kind.map({ ["recipe", "collection", "attempt"].contains($0) }) ?? true), (status.map({ ["active", "pending_review"].contains($0) }) ?? true) else { throw NativePublicationError.invalid }
+              url == "\(NativeOnlineConfiguration.current.publicOrigin)/c/" + id, (kind.map({ ["recipe", "collection", "attempt", "cook"].contains($0) }) ?? true), (status.map({ ["active", "pending_review"].contains($0) }) ?? true) else { throw NativePublicationError.invalid }
     }
 }
 struct NativePublicationOperation: Codable {
@@ -45,7 +45,7 @@ struct NativePublicationOperation: Codable {
         let like = item && segments.count == 5 && segments[4] == "like"
         let archive = method == "POST" && path == "/v1/recipes" || method == "PUT" && recipe
         guard termsVersion.map({ archive && $0.range(of: "^[a-z0-9-]{1,64}$", options: .regularExpression) != nil }) ?? true else { throw NativePublicationError.invalid }
-        guard publicationKind.map({ archive && ["recipe", "collection", "attempt"].contains($0) }) ?? true else { throw NativePublicationError.invalid }
+        guard publicationKind.map({ archive && ["recipe", "collection", "attempt", "cook"].contains($0) }) ?? true else { throw NativePublicationError.invalid }
         guard archive && contentType == "application/zip" && bytes > 0 && (method != "PUT" || expectedRevision != nil)
                 || !archive && draftId == nil && contentType == "application/json" && bytes <= 8192 &&
                     (path == "/v1/me/profile" && method == "PUT" || like && ["POST", "DELETE"].contains(method) || recipe && method == "DELETE" && expectedRevision != nil) else { throw NativePublicationError.invalid }

@@ -75,7 +75,7 @@ struct NativePublicItemCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     TurnInBannerText(item.title)
                     Text(item.credit.displayName).font(PitTechFont.body)
-                    Text("\(item.likes) likes · \(item.forks) forks · \(item.categoryLabel)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    Text("\(item.kind == "cook" ? "Cook · " : "")\(item.likes) likes · \(item.forks) forks · \(item.categoryLabel)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     if let facts {
                         let slots = [facts.timeLabel, facts.tempLabel].compactMap { $0 }
                         if !slots.isEmpty {
@@ -122,7 +122,7 @@ struct NativePublicRecipeView: View {
                     }
                     TurnInBannerText(detail.title, font: PitTechFont.bannerTitle).accessibilityIdentifier("public-title")
                     Text("Shared by " + detail.credit.displayName).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
-                    Text("★ \(detail.likes) · ⑂ \(detail.forks)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    Text((detail.payload.objectValue?["kind"]?.stringValue == "cook" ? "Cook · " : "") + "★ \(detail.likes) · ⑂ \(detail.forks)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     if let url = detail.credit.profileUrl, let destination = try? NativePublicLink.destination(url), destination.hasPrefix("profile:") { NavigationLink("View public cookbook", value: destination) }
                     if account.enabled && community.enabled { NativePublicLikeActions(id: id) }
                     NativeCommunityActions(detail: detail)
@@ -151,11 +151,21 @@ struct NativePublicRecipeView: View {
                             .buttonStyle(.bordered).accessibilityIdentifier("public-plan-this")
                     }.disabled(forking)
                     if community.preparing { ProgressView("Preparing your preview…"); Button("Cancel download") { task?.cancel() } }
+                    // Publishable Cooks (issue #250): a cook publication
+                    // leads with the session its dishes shared and their
+                    // one timeline; the per-dish stories stay in the dish
+                    // cards below.
+                    if detail.payload.objectValue?["kind"]?.stringValue == "cook" {
+                        if let session = detail.payload.objectValue?["session"]?.objectValue {
+                            NativePublicSessionView(session: session, temperatureUnit: "°\(store.temperatureUnit)")
+                        }
+                        NativePublicSessionTimeline(detail: detail)
+                    }
                     ForEach(detail.recipes.indices, id: \.self) { index in
                         let recipe = detail.recipes[index].objectValue ?? [:]
                         TurnInCard {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Recipe").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                                Text(detail.payload.objectValue?["kind"]?.stringValue == "cook" ? "Dish" : "Recipe").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                                 TurnInBannerText(recipe["title"]?.stringValue ?? "Recipe")
                                 if let source = recipe["source"]?.objectValue {
                                     if source["removed"]?.boolValue == true { Text("Based on a removed recipe").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted) }
