@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.BorderStroke
@@ -413,7 +415,14 @@ internal fun PitTechApp(
             // the selected bottom tab says where you are. Only a More
             // sub-destination keeps a slim back row, so its way back is
             // never lost. The offline banner rides above every tab (Q1).
-            Column {
+            // Issue #274: edge-to-edge is enforced at targetSdk 36 and
+            // Scaffold does not inset a custom top bar (a Material TopAppBar
+            // does it itself; this Column is not one), so the status-bar
+            // inset is applied here, at the shell — Scaffold measures the
+            // padded top bar and grows every tab's content padding to
+            // match, so the brand strip and the More back row clear the
+            // status bar with no per-screen padding and no double inset.
+            Column(Modifier.statusBarsPadding()) {
                 if (section == MainSection.MORE && moreDestination != null) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
@@ -1058,7 +1067,11 @@ private fun StartCookScreen(
         },
         bottomBar = {
             Surface(shadowElevation = 6.dp, color = pitTechTokens().surface) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                // Same edge-to-edge class as issue #274, at the other edge:
+                // this custom bottom bar carries the navigation-bar inset
+                // itself so the action row clears the gesture bar (the top
+                // bar here is a Material TopAppBar, which insets itself).
+                Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp)) {
                     if (saveError != null) {
                         Text(saveError, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
                     }

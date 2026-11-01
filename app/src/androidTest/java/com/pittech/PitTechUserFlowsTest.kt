@@ -1297,6 +1297,20 @@ class PitTechUserFlowsTest {
         // The brand strip rides the tab roots: mascot + wordmark, no title.
         // (Assert by tag: the empty-log lockup also carries a "PitTech" text.)
         composeRule.onNodeWithTag("pittech-brand-strip").assertIsDisplayed()
+        // Issue #274: the strip must clear the status bar. Edge-to-edge is
+        // enforced at targetSdk 36 and the shell's custom top bar carries
+        // the status-bar inset; before the fix the strip's top sat at the
+        // window top and the status-bar icons overdrew it.
+        var statusBarBottomPx = 0
+        composeRule.activityRule.scenario.onActivity { activity ->
+            statusBarBottomPx = androidx.core.view.ViewCompat.getRootWindowInsets(activity.window.decorView)
+                ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())?.top ?: 0
+        }
+        val brandStripTopPx = composeRule.onNodeWithTag("pittech-brand-strip").fetchSemanticsNode().boundsInWindow.top
+        assertTrue(
+            "Brand strip top ($brandStripTopPx) must clear the status bar (bottom $statusBarBottomPx)",
+            brandStripTopPx >= statusBarBottomPx.toFloat() - 1f,
+        )
         // The floating action is the board's primary start entry; it opens
         // the same start-a-cook flow, and system back leaves it again.
         composeRule.onNodeWithTag("start-cook-fab").assertIsDisplayed().performClick()
