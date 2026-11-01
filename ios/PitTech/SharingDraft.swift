@@ -204,15 +204,25 @@ extension PitTechLibrary {
             guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return .null }
             return .string(String(trimmed.prefix(limit)))
         }
-        return .object([
-            "startedAtUtcMillis": .number(Double(cook.startedAtUtcMillis)),
-            "endedAtUtcMillis": cook.endedAtUtcMillis.map { .number(Double($0)) } ?? .null,
-            "smokerName": text(cook.smokerName, 160), "fuelType": text(cook.fuelType, 160), "woodOrPelletBlend": text(cook.woodOrPelletBlend, 160),
-            "setpointValue": cook.initialSetpointValue.map(JSONValue.number) ?? .null, "setpointUnit": text(cook.initialSetpointUnit, 16),
-            "outdoorTemperatureValue": cook.outdoorTemperatureValue.map(JSONValue.number) ?? .null, "outdoorTemperatureUnit": text(cook.outdoorTemperatureUnit, 16),
-            "weatherNotes": .string(String((cook.weatherNotes ?? "").prefix(2000))), "windNotes": .string(String((cook.windNotes ?? "").prefix(2000))), "notes": .string(String((cook.notes ?? "").prefix(2000))),
-            "serveAtUtcMillis": serveAt.map { .number(Double($0)) } ?? .null,
-        ])
+        func number(_ value: Double?) -> JSONValue { value.map(JSONValue.number) ?? .null }
+        func millis(_ value: Int64?) -> JSONValue { value.map { .number(Double($0)) } ?? .null }
+        // Built in steps: one dictionary literal for all fourteen facts
+        // exceeds what the type checker will take in reasonable time.
+        var session: [String: JSONValue] = [:]
+        session["startedAtUtcMillis"] = .number(Double(cook.startedAtUtcMillis))
+        session["endedAtUtcMillis"] = millis(cook.endedAtUtcMillis)
+        session["smokerName"] = text(cook.smokerName, 160)
+        session["fuelType"] = text(cook.fuelType, 160)
+        session["woodOrPelletBlend"] = text(cook.woodOrPelletBlend, 160)
+        session["setpointValue"] = number(cook.initialSetpointValue)
+        session["setpointUnit"] = text(cook.initialSetpointUnit, 16)
+        session["outdoorTemperatureValue"] = number(cook.outdoorTemperatureValue)
+        session["outdoorTemperatureUnit"] = text(cook.outdoorTemperatureUnit, 16)
+        session["weatherNotes"] = .string(String((cook.weatherNotes ?? "").prefix(2000)))
+        session["windNotes"] = .string(String((cook.windNotes ?? "").prefix(2000)))
+        session["notes"] = .string(String((cook.notes ?? "").prefix(2000)))
+        session["serveAtUtcMillis"] = millis(serveAt)
+        return .object(session)
     }
     func saveSharingDraft(_ id: String, document: NativeSharingDocument, expectedUpdated: Double) throws {
         guard let index = library.companionRecords.firstIndex(where: { $0.objectValue?["id"]?.stringValue == id }), let record = sharingRecord(id), record["kind"]?.stringValue == "sharing_draft",

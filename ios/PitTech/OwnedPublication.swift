@@ -123,15 +123,23 @@ enum NativeOwnedPublication {
         let sessionJson: JSONValue? = payload["session"]?.objectValue.map { session in
             let origin = 946_684_800_000.0
             func nullable(_ key: String) -> JSONValue { session[key].flatMap { $0 == .null ? nil : $0 } ?? .null }
-            return .object([
-                "startedAtUtcMillis": .number(origin),
-                "endedAtUtcMillis": session["durationMillis"]?.numberValue.map { .number(origin + $0) } ?? .null,
-                "smokerName": nullable("smokerName"), "fuelType": nullable("fuelType"), "woodOrPelletBlend": nullable("woodOrPelletBlend"),
-                "setpointValue": session["setpoint"]?.objectValue?["value"] ?? .null, "setpointUnit": session["setpoint"]?.objectValue?["unit"] ?? .null,
-                "outdoorTemperatureValue": nullable("outdoorTemperatureValue"), "outdoorTemperatureUnit": nullable("outdoorTemperatureUnit"),
-                "weatherNotes": .string(session["weatherNotes"]?.stringValue ?? ""), "windNotes": .string(session["windNotes"]?.stringValue ?? ""), "notes": .string(session["notes"]?.stringValue ?? ""),
-                "serveAtUtcMillis": session["serveAtOffsetMillis"]?.numberValue.map { .number(origin + $0) } ?? .null,
-            ])
+            func rebased(_ key: String) -> JSONValue { session[key]?.numberValue.map { .number(origin + $0) } ?? .null }
+            // Built in steps (the type checker times out on this as one literal).
+            var facts: [String: JSONValue] = [:]
+            facts["startedAtUtcMillis"] = .number(origin)
+            facts["endedAtUtcMillis"] = rebased("durationMillis")
+            facts["smokerName"] = nullable("smokerName")
+            facts["fuelType"] = nullable("fuelType")
+            facts["woodOrPelletBlend"] = nullable("woodOrPelletBlend")
+            facts["setpointValue"] = session["setpoint"]?.objectValue?["value"] ?? .null
+            facts["setpointUnit"] = session["setpoint"]?.objectValue?["unit"] ?? .null
+            facts["outdoorTemperatureValue"] = nullable("outdoorTemperatureValue")
+            facts["outdoorTemperatureUnit"] = nullable("outdoorTemperatureUnit")
+            facts["weatherNotes"] = .string(session["weatherNotes"]?.stringValue ?? "")
+            facts["windNotes"] = .string(session["windNotes"]?.stringValue ?? "")
+            facts["notes"] = .string(session["notes"]?.stringValue ?? "")
+            facts["serveAtUtcMillis"] = rebased("serveAtOffsetMillis")
+            return .object(facts)
         }
         let document = NativeSharingDocument(title: title, identityMode: identity, category: FoodCategory.normalizedId(payload["category"]?.stringValue), heroPhotoId: hero, entries: entries, sessionJson: sessionJson); try document.validate()
         let context = NativePublicationEditContext(receipt: receipt, rootSource: try NativePublicationEditContext.source(payload["source"] ?? .null, excluding: receipt.id), memberIds: members, memberSources: sources, instructionIds: steps, assetIds: assets, measuredAttemptId: payload["measuredAttemptId"]?.stringValue, memberMethods: methods); try context.validate()

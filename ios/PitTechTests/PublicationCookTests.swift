@@ -11,14 +11,21 @@ final class PublicationCookTests: XCTestCase {
     private let start = 1_700_000_000_000.0
 
     private func sessionJson() -> JSONValue {
-        .object([
-            "startedAtUtcMillis": .number(start), "endedAtUtcMillis": .number(start + 40_800_000),
-            "smokerName": .string("Offset smoker"), "fuelType": .string("Pellets"), "woodOrPelletBlend": .string("Oak"),
-            "setpointValue": .number(250), "setpointUnit": .string("°F"),
-            "outdoorTemperatureValue": .number(61), "outdoorTemperatureUnit": .string("°F"),
-            "weatherNotes": .string("Clear"), "windNotes": .string(""), "notes": .string("Game day"),
-            "serveAtUtcMillis": .number(start + 39_600_000),
-        ])
+        var session: [String: JSONValue] = [:]
+        session["startedAtUtcMillis"] = .number(start)
+        session["endedAtUtcMillis"] = .number(start + 40_800_000)
+        session["smokerName"] = .string("Offset smoker")
+        session["fuelType"] = .string("Pellets")
+        session["woodOrPelletBlend"] = .string("Oak")
+        session["setpointValue"] = .number(250)
+        session["setpointUnit"] = .string("°F")
+        session["outdoorTemperatureValue"] = .number(61)
+        session["outdoorTemperatureUnit"] = .string("°F")
+        session["weatherNotes"] = .string("Clear")
+        session["windNotes"] = .string("")
+        session["notes"] = .string("Game day")
+        session["serveAtUtcMillis"] = .number(start + 39_600_000)
+        return .object(session)
     }
 
     private func observation(id: String, at: Double, anchor: Double, action: String, title: String) -> JSONValue {

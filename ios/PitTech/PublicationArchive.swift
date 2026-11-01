@@ -120,13 +120,20 @@ enum NativePublicationProjection {
         let setpoint: JSONValue = if let value = sessionRaw["setpointValue"]?.numberValue, let unit = sessionRaw["setpointUnit"]?.stringValue {
             .object(["value": .number(value), "unit": .string(unit)])
         } else { .null }
-        return .object(["smokerName": str("smokerName"), "fuelType": str("fuelType"), "woodOrPelletBlend": str("woodOrPelletBlend"),
-            "setpoint": setpoint,
-            "outdoorTemperatureValue": sessionRaw["outdoorTemperatureValue"]?.numberValue.map(JSONValue.number) ?? .null,
-            "outdoorTemperatureUnit": str("outdoorTemperatureUnit"),
-            "weatherNotes": .string(sessionRaw["weatherNotes"]?.stringValue ?? ""), "windNotes": .string(sessionRaw["windNotes"]?.stringValue ?? ""), "notes": .string(sessionRaw["notes"]?.stringValue ?? ""),
-            "serveAtOffsetMillis": try sessionRaw["serveAtUtcMillis"]?.numberValue.map { try offset($0 - started) } ?? .null,
-            "durationMillis": try ended.flatMap { $0 - started >= 0 ? $0 - started : nil }.map { try offset($0) } ?? .null])
+        // Built in steps (the type checker times out on this as one literal).
+        var session: [String: JSONValue] = [:]
+        session["smokerName"] = str("smokerName")
+        session["fuelType"] = str("fuelType")
+        session["woodOrPelletBlend"] = str("woodOrPelletBlend")
+        session["setpoint"] = setpoint
+        session["outdoorTemperatureValue"] = sessionRaw["outdoorTemperatureValue"]?.numberValue.map(JSONValue.number) ?? .null
+        session["outdoorTemperatureUnit"] = str("outdoorTemperatureUnit")
+        session["weatherNotes"] = .string(sessionRaw["weatherNotes"]?.stringValue ?? "")
+        session["windNotes"] = .string(sessionRaw["windNotes"]?.stringValue ?? "")
+        session["notes"] = .string(sessionRaw["notes"]?.stringValue ?? "")
+        session["serveAtOffsetMillis"] = try sessionRaw["serveAtUtcMillis"]?.numberValue.map { try offset($0 - started) } ?? .null
+        session["durationMillis"] = try ended.flatMap { $0 - started >= 0 ? $0 - started : nil }.map { try offset($0) } ?? .null
+        return .object(session)
     }
     /// Publishable Cooks (issue #250): place an actual dish story on the
     /// session clock and lift its recorded cook inputs into the story, so
