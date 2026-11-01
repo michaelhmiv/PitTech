@@ -70,21 +70,20 @@ final class FlowingLiveUITests: XCTestCase {
         let targetValue = app.staticTexts["pit-target-value"]
         reveal(targetValue, app: app)
         XCTAssertEqual(targetValue.label, "250°")
-        // The tap must land on a settled, hittable button (#279): the
-        // board content below the fold is still materializing when the
-        // reveal scroll ends, and on degraded runners a blind tap
-        // could be swallowed — the write never happens and the waiter
-        // below times out at no fault of the stepper. Poll for
-        // hittable (the settle-loop idiom used further down this same
-        // test), then wait generously for the write; if the label
-        // still reads 250° after the first wait, the tap was swallowed
-        // — re-tap once and wait again. The assertion is unchanged:
+        // The tap must land on a settled, hittable button (#279):
+        // reveal the BUTTON, not just the value beside it. On this
+        // suite's runners the value's reveal can exhaust its swipes
+        // with the button itself still below the fold — it then exists
+        // in the tree but never turns hittable no matter how long a
+        // passive poll waits (this PR's first run: 30 s of polls, all
+        // not-hittable, while a blind tap in other runs reached it).
+        // reveal() is the suite's own answer: swipe until hittable.
+        // Then wait generously for the write; if the label still
+        // reads 250° after the first wait, the tap was swallowed —
+        // re-tap once and wait again. The assertion is unchanged:
         // the stepper must show 255°.
         let plus = app.buttons["pit-target-plus"]
-        let plusDeadline = Date().addingTimeInterval(30)
-        while !plus.isHittable && Date() < plusDeadline {
-            Thread.sleep(forTimeInterval: 0.5)
-        }
+        reveal(plus, app: app)
         XCTAssertTrue(plus.isHittable, "pit-target-plus never became hittable")
         plus.tap()
         let stepped = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)

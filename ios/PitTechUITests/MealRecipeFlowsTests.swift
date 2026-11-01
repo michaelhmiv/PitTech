@@ -296,47 +296,71 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
     }
-    // Text entry (#268): this helper used to gate typing on
-    // `field.hasFocus`, and that gate is what starved the chain. In
-    // all four thorough-gate attempts on 43a1af8 the fork sheet's
-    // name field raised the keyboard when tapped, yet `hasFocus`
-    // never read true for the rub field across 18 taps per attempt —
-    // so the helper exhausted its cycles without ever calling
-    // typeText and every drive bailed at the rub step (0 fork-target
-    // taps, 0 fork-save taps in every attempt's log). The AX
-    // keyboard-focus attribute is not a reliable oracle for these
-    // SwiftUI boxed fields, and no other test in the suite consults
-    // it: every other entry — including sheet fields in this same
-    // shard, in the same runs — taps the field and types directly.
-    // Follow the suite: tap the field, wait for the keyboard in
-    // short polls, type into the field, then prove the entry landed
-    // by reading the field's value back; retry the whole cycle a
-    // bounded number of times before giving up. Entry REPLACES the
-    // field's contents (what `clearingFirst` always meant, now true
-    // for every field, mirroring Android's replaceText): a pre-filled
-    // rub ("Salt and pepper") or target (162) must not survive as a
-    // prefix of the typed value.
+    // Text entry (#268) — two failure modes, both proven from CI
+    // logs, shaped this helper:
+    //
+    // 1. The gate starvation (thorough gate on 43a1af8, 4/4
+    //    attempts): the old helper tapped the field up to 18 times
+    //    per drive, checking `hasFocus` in a tight tap/check loop,
+    //    and never once called typeText — every drive bailed at the
+    //    rub step (0 typeText, 0 fork-target taps, 0 fork-save taps
+    //    in every attempt). The checks raced the focus transfer and
+    //    the alternating coordinate taps could hand focus straight
+    //    back to the field just left.
+    // 2. The transfer race (this fix's first PR run): typing ~1 s
+    //    after the tap is too soon when focus must move between
+    //    fields — the rub entry landed ("House rub", verified), but
+    //    the target entry typed while the rub field still held focus
+    //    and died with "Neither element nor any descendant has
+    //    keyboard focus". The failure snapshot also shows why a tap
+    //    can miss entirely: with a sibling's keyboard up, the target
+    //    field's frame (y 522–563) reaches into the keyboard's band,
+    //    and a tap there is swallowed by the keyboard window even
+    //    though the field reports hittable.
+    //
+    // So, per cycle: lift the field clear of any raised keyboard,
+    // tap ONCE, then poll this field's own keyboard-focus state —
+    // the AX tree does report it (the focused field is flagged
+    // "Keyboard Focused" in the snapshot above) — for as long as a
+    // slow cross-field transfer, including a keyboard-type swap to
+    // the decimal pad, can take. Type only once focus is observed;
+    // typing unfocused is a hard failure that would end the test
+    // instead of letting the caller relaunch and re-drive. Entry
+    // REPLACES the field's contents (what `clearingFirst` always
+    // meant, now true for every field, mirroring Android's
+    // replaceText): a pre-filled rub ("Salt and pepper") or target
+    // (162) must not survive as a prefix of the typed value. Prove
+    // the entry by reading the field's value back before returning.
     @discardableResult
     private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false) -> Bool {
         guard field.waitForExistence(timeout: 15) else { return false }
         if !field.isHittable { reveal(field, app: app) }
         Thread.sleep(forTimeInterval: 1)
         for cycle in 0..<3 {
-            // Alternate the tap mechanism across cycles — an element
-            // tap, then a raw window-coordinate tap at the field's
-            // center; the two reach first responder through different
-            // event paths, and a stalled session often answers one when
-            // it ignores the other.
+            // Lift the field clear of a raised keyboard: while any
+            // part of it reaches the keyboard's top edge, taps land
+            // on the keyboard window, not the field. Swipe the sheet
+            // up and re-measure against fresh frames.
+            let keyboard = app.keyboards.firstMatch
+            for _ in 0..<3 where keyboard.exists && field.frame.maxY >= keyboard.frame.minY - 8 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            // One tap per cycle; the mechanism alternates BETWEEN
+            // cycles, never inside the focus wait — a second tap at
+            // a stale coordinate can hand focus back to the field
+            // just left (failure mode 1).
             if cycle % 2 == 0 || field.frame.width == 0 {
                 field.tap()
             } else {
                 app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
                     .withOffset(CGVector(dx: field.frame.midX, dy: field.frame.midY)).tap()
             }
-            // Wait for the keyboard with short existence polls rather
-            // than one long snapshot wait (the poll idiom the
-            // live-board test's settle loop uses on a busy tree).
-            for _ in 0..<20 where !app.keyboards.firstMatch.exists { Thread.sleep(forTimeInterval: 0.5) }
+            // Poll for the transfer to land (up to ~15 s): checks
+            // every half second, not one early read (failure mode 1)
+            // and not a blind fixed delay (failure mode 2).
+            for _ in 0..<30 where !field.hasFocus { Thread.sleep(forTimeInterval: 0.5) }
+            guard field.hasFocus else { continue }
             if let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
                 field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
             }
