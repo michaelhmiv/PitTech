@@ -112,7 +112,12 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("more-devices").performClick()
         composeRule.onNodeWithTag("telemetry-connections").assertIsDisplayed()
         composeRule.onNodeWithTag("telemetry-add").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Temperature connections · Beta").assertIsDisplayed()
+        // Scroll back to the header before asserting it (issue #274): the
+        // shell now consumes the status-bar inset, so at font 1.5 the
+        // connections header sits just above the viewport after the scroll
+        // to telemetry-add — the same scroll-first pattern as telemetry-add
+        // itself; the assertion is unchanged.
+        composeRule.onNodeWithText("Temperature connections · Beta").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-more").performClick()
         composeRule.onNodeWithTag("more-settings").performClick()
