@@ -112,7 +112,12 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("more-devices").performClick()
         composeRule.onNodeWithTag("telemetry-connections").assertIsDisplayed()
         composeRule.onNodeWithTag("telemetry-add").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Temperature connections · Beta").assertIsDisplayed()
+        // Scroll back to the header before asserting it (issue #274): the
+        // shell now consumes the status-bar inset, so at font 1.5 the
+        // connections header sits just above the viewport after the scroll
+        // to telemetry-add — the same scroll-first pattern as telemetry-add
+        // itself; the assertion is unchanged.
+        composeRule.onNodeWithText("Temperature connections · Beta").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-more").performClick()
         composeRule.onNodeWithTag("more-settings").performClick()
@@ -1297,6 +1302,20 @@ class PitTechUserFlowsTest {
         // The brand strip rides the tab roots: mascot + wordmark, no title.
         // (Assert by tag: the empty-log lockup also carries a "PitTech" text.)
         composeRule.onNodeWithTag("pittech-brand-strip").assertIsDisplayed()
+        // Issue #274: the strip must clear the status bar. Edge-to-edge is
+        // enforced at targetSdk 36 and the shell's custom top bar carries
+        // the status-bar inset; before the fix the strip's top sat at the
+        // window top and the status-bar icons overdrew it.
+        var statusBarBottomPx = 0
+        composeRule.activityRule.scenario.onActivity { activity ->
+            statusBarBottomPx = androidx.core.view.ViewCompat.getRootWindowInsets(activity.window.decorView)
+                ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())?.top ?: 0
+        }
+        val brandStripTopPx = composeRule.onNodeWithTag("pittech-brand-strip").fetchSemanticsNode().boundsInWindow.top
+        assertTrue(
+            "Brand strip top ($brandStripTopPx) must clear the status bar (bottom $statusBarBottomPx)",
+            brandStripTopPx >= statusBarBottomPx.toFloat() - 1f,
+        )
         // The floating action is the board's primary start entry; it opens
         // the same start-a-cook flow, and system back leaves it again.
         composeRule.onNodeWithTag("start-cook-fab").assertIsDisplayed().performClick()

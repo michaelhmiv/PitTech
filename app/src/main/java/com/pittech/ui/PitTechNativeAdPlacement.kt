@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.google.android.libraries.ads.mobile.sdk.common.AdChoicesView
 import com.google.android.libraries.ads.mobile.sdk.common.LoadAdError
 import com.google.android.libraries.ads.mobile.sdk.nativead.MediaView
 import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAd
@@ -59,6 +60,15 @@ import com.pittech.ads.shouldAttemptAdRequest
 // is unchanged.
 private val CookListNativeAdSlotHeight = 108.dp
 private val CookListNativeAdContentHeight = 64.dp
+
+// The AdChoices view owns the ad content's top-right corner (issue #274):
+// the content row keeps this much room clear at its end so the AdChoices
+// icon never overlaps the headline or the call to action.
+private const val AdChoicesCornerSizeDp = 24
+// Media width follows the creative's aspect ratio at the row's fixed
+// height, clamped so the slim row stays banner-proportioned.
+private const val MediaMinWidthDp = 40f
+private const val MediaMaxWidthDp = 128f
 
 @Composable
 internal fun PitTechNativeAdPlacement(
@@ -184,7 +194,9 @@ private fun AdLabelChip() {
 private data class PitTechNativeAdAssets(
     val icon: ImageView,
     val headline: TextView,
-    val advertiser: TextView,
+    // One secondary line whose registered asset follows what it shows at
+    // bind time: the advertiser, or the body text when there is none.
+    val secondary: TextView,
     val media: MediaView,
     val callToAction: TextView,
     var boundAd: NativeAd? = null,
@@ -202,10 +214,18 @@ private fun createPitTechNativeAdView(context: Context, style: PitTechNativeAdSt
         setBackgroundColor(Color.TRANSPARENT)
     }
     // Small template: one horizontal row — media (or icon), the headline
-    // over one secondary line, and the call to action at the end.
+    // over one secondary line, and the call to action at the end — inside a
+    // frame whose top-right corner belongs to the AdChoices view. AdMob
+    // requires the AdChoices icon to render inside the NativeAdView
+    // (issue #274: its absence was one of the two validator failures), so
+    // the view is created with the template, added as a child of the
+    // NativeAdView, and registered; the row keeps the corner clear so the
+    // icon never overlaps the headline or the call to action.
+    val root = FrameLayout(context)
     val content = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, 0, context.dp(AdChoicesCornerSizeDp), 0)
     }
     val media = MediaView(context)
     val icon = ImageView(context).apply {
@@ -219,7 +239,7 @@ private fun createPitTechNativeAdView(context: Context, style: PitTechNativeAdSt
         maxLines = 1
         ellipsize = TextUtils.TruncateAt.END
     }
-    val advertiser = TextView(context).apply {
+    val secondary = TextView(context).apply {
         setTextColor(style.secondaryTextColor)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         maxLines = 1
@@ -231,7 +251,7 @@ private fun createPitTechNativeAdView(context: Context, style: PitTechNativeAdSt
         gravity = Gravity.CENTER_VERTICAL
     }
     texts.addView(headline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-    texts.addView(advertiser, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    texts.addView(secondary, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     val callToAction = TextView(context).apply {
         setTextColor(style.actionTextColor)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
@@ -263,37 +283,84 @@ private fun createPitTechNativeAdView(context: Context, style: PitTechNativeAdSt
             marginStart = context.dp(10)
         },
     )
-    nativeAdView.addView(
+    root.addView(
         content,
         FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
     )
-    nativeAdView.headlineView = headline
-    nativeAdView.advertiserView = advertiser
-    nativeAdView.iconView = icon
-    nativeAdView.callToActionView = callToAction
-    nativeAdView.tag = PitTechNativeAdAssets(icon, headline, advertiser, media, callToAction)
+    val adChoices = AdChoicesView(context)
+    root.addView(
+        adChoices,
+        FrameLayout.LayoutParams(
+            context.dp(AdChoicesCornerSizeDp),
+            context.dp(AdChoicesCornerSizeDp),
+            Gravity.TOP or Gravity.END,
+        ),
+    )
+    nativeAdView.addView(
+        root,
+        FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+    )
+    nativeAdView.adChoicesView = adChoices
+    nativeAdView.tag = PitTechNativeAdAssets(icon, headline, secondary, media, callToAction)
     return nativeAdView
 }
 
 private fun bindPitTechNativeAd(nativeAdView: NativeAdView, ad: NativeAd, style: PitTechNativeAdStyle) {
     val assets = nativeAdView.tag as PitTechNativeAdAssets
     assets.headline.setTextColor(style.headlineColor)
-    assets.advertiser.setTextColor(style.secondaryTextColor)
+    assets.secondary.setTextColor(style.secondaryTextColor)
     assets.callToAction.setTextColor(style.actionTextColor)
     (assets.callToAction.background as? GradientDrawable)?.setColor(style.actionColor)
     if (assets.boundAd === ad) return
     assets.boundAd = ad
 
     assets.headline.text = ad.headline.orEmpty()
-    // One secondary line: the advertiser when present, else the body text.
-    assets.advertiser.text = ad.advertiser?.takeIf { it.isNotBlank() } ?: ad.body.orEmpty()
     assets.callToAction.text = ad.callToAction.orEmpty()
     assets.icon.setImageDrawable(ad.icon?.drawable)
 
+    // One secondary line: the advertiser when the ad carries one, else the
+    // body text. The line's view must be registered for the asset it is
+    // actually showing — stuffing body text into the advertiser slot was
+    // the second validator failure (issue #274) — so the registration is
+    // set here, per bind, with the other one cleared before the ad is
+    // registered. Headline, icon and call to action are registered the
+    // same way, and every registered view is already attached inside the
+    // NativeAdView (built that way in createPitTechNativeAdView), which
+    // is what lets the SDK record clicks on the NativeAdView itself; no
+    // child carries its own click listener.
+    nativeAdView.headlineView = assets.headline
+    nativeAdView.iconView = assets.icon
+    nativeAdView.callToActionView = assets.callToAction
+    val advertiser = ad.advertiser?.takeIf { it.isNotBlank() }
+    if (advertiser != null) {
+        assets.secondary.text = advertiser
+        nativeAdView.bodyView = null
+        nativeAdView.advertiserView = assets.secondary
+    } else {
+        assets.secondary.text = ad.body.orEmpty()
+        nativeAdView.advertiserView = null
+        nativeAdView.bodyView = assets.secondary
+    }
+
     assets.callToAction.visibility = if (ad.callToAction.isNullOrBlank()) View.GONE else View.VISIBLE
-    val hasMedia = ad.mediaContent != null
+    val mediaContent = ad.mediaContent
+    val hasMedia = mediaContent != null
     assets.media.visibility = if (hasMedia) View.VISIBLE else View.GONE
     assets.icon.visibility = if (!hasMedia && ad.icon?.drawable != null) View.VISIBLE else View.GONE
+    if (hasMedia) {
+        // Size the media from the creative's own aspect ratio instead of a
+        // blind square: the row's height is fixed, so the width follows
+        // the ratio, clamped to keep the row banner-proportioned.
+        val aspectRatio = mediaContent?.aspectRatio ?: 0f
+        val widthDp = if (aspectRatio > 0f) {
+            (CookListNativeAdContentHeight.value * aspectRatio).coerceIn(MediaMinWidthDp, MediaMaxWidthDp)
+        } else {
+            CookListNativeAdContentHeight.value
+        }
+        val mediaParams = assets.media.layoutParams as LinearLayout.LayoutParams
+        mediaParams.width = (widthDp * assets.media.resources.displayMetrics.density).toInt()
+        assets.media.layoutParams = mediaParams
+    }
 
     nativeAdView.registerNativeAd(ad, assets.media.takeIf { hasMedia })
 }
