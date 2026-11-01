@@ -34,7 +34,17 @@ func publicCardFacts(detail: NativePublicDetail, temperatureUnit: String) -> Pub
     } ?? detail.recipes.first
     let story = heroRecipe?.objectValue?["story"]?.objectValue
     var timeLabel: String?
-    if let on = story?["foodOnOffsetMillis"]?.numberValue, let off = story?["foodOffOffsetMillis"]?.numberValue {
+    // A cook card's time is the whole session's length when the
+    // publication carries one (issue #250); the hero dish's own span is
+    // the fallback.
+    if let duration = detail.payload.objectValue?["session"]?.objectValue?["durationMillis"]?.numberValue, duration > 0 {
+        let total = Int64(duration / 60_000)
+        if total > 0 {
+            let hours = total / 60, minutes = total % 60
+            timeLabel = if hours > 0, minutes > 0 { "\(hours)H \(minutes)M" } else if hours > 0 { "\(hours)H" } else { "\(minutes)M" }
+        }
+    }
+    if timeLabel == nil, let on = story?["foodOnOffsetMillis"]?.numberValue, let off = story?["foodOffOffsetMillis"]?.numberValue {
         let total = Int64((off - on) / 60_000)
         if total > 0 {
             let hours = total / 60, minutes = total % 60

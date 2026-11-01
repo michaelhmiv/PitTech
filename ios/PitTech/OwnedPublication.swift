@@ -26,7 +26,7 @@ struct NativePublicationEditContext: Codable, Sendable {
         return .object(["itemId": .string(item), "revisionId": .string(revision), "removed": .bool(removed)])
     }
     func apply(_ prepared: NativePreparedPublication, document: NativeSharingDocument, kind: String) throws -> NativePreparedPublication {
-        try validate(); guard ["recipe", "collection", "attempt"].contains(kind) else { throw NativePublicationError.invalid }; let selected = document.entries.filter(\.included)
+        try validate(); guard ["recipe", "collection", "attempt", "cook"].contains(kind) else { throw NativePublicationError.invalid }; let selected = document.entries.filter(\.included)
         guard var payload = prepared.payload.objectValue, let rows = payload["recipes"]?.arrayValue, rows.count == selected.count else { throw NativePublicationError.invalid }
         var recipes: [JSONValue] = [], photos: [String: Data] = [:]
         for (index, entry) in selected.enumerated() {
@@ -115,7 +115,25 @@ enum NativeOwnedPublication {
             if let method = recipe["method"]?.stringValue { methods[entryId] = method }
             members[entryId] = publicId; sources[entryId] = try NativePublicationEditContext.source(recipe["source"] ?? .null, excluding: receipt.id)
         }
-        let document = NativeSharingDocument(title: title, identityMode: identity, category: FoodCategory.normalizedId(payload["category"]?.stringValue), heroPhotoId: hero, entries: entries); try document.validate()
+        // A cook publication's draft also recovers its session facts from
+        // the published payload, rebased onto the same internal origin
+        // the frozen stories use, so an owner update rebuilds the
+        // identical session offsets (issue #250: recorded facts stay
+        // frozen through updates).
+        let sessionJson: JSONValue? = payload["session"]?.objectValue.map { session in
+            let origin = 946_684_800_000.0
+            func nullable(_ key: String) -> JSONValue { session[key].flatMap { $0 == .null ? nil : $0 } ?? .null }
+            return .object([
+                "startedAtUtcMillis": .number(origin),
+                "endedAtUtcMillis": session["durationMillis"]?.numberValue.map { .number(origin + $0) } ?? .null,
+                "smokerName": nullable("smokerName"), "fuelType": nullable("fuelType"), "woodOrPelletBlend": nullable("woodOrPelletBlend"),
+                "setpointValue": session["setpoint"]?.objectValue?["value"] ?? .null, "setpointUnit": session["setpoint"]?.objectValue?["unit"] ?? .null,
+                "outdoorTemperatureValue": nullable("outdoorTemperatureValue"), "outdoorTemperatureUnit": nullable("outdoorTemperatureUnit"),
+                "weatherNotes": .string(session["weatherNotes"]?.stringValue ?? ""), "windNotes": .string(session["windNotes"]?.stringValue ?? ""), "notes": .string(session["notes"]?.stringValue ?? ""),
+                "serveAtUtcMillis": session["serveAtOffsetMillis"]?.numberValue.map { .number(origin + $0) } ?? .null,
+            ])
+        }
+        let document = NativeSharingDocument(title: title, identityMode: identity, category: FoodCategory.normalizedId(payload["category"]?.stringValue), heroPhotoId: hero, entries: entries, sessionJson: sessionJson); try document.validate()
         let context = NativePublicationEditContext(receipt: receipt, rootSource: try NativePublicationEditContext.source(payload["source"] ?? .null, excluding: receipt.id), memberIds: members, memberSources: sources, instructionIds: steps, assetIds: assets, measuredAttemptId: payload["measuredAttemptId"]?.stringValue, memberMethods: methods); try context.validate()
         return NativeOwnedPublicationDraft(id: UUID().uuidString.lowercased(), document: document, photos: photos, context: context)
     }

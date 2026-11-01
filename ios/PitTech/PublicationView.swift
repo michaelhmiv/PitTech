@@ -25,13 +25,17 @@ struct NativePublicationView: View {
     @State private var published: NativePublicationReceipt?
     @State private var lastUserId: String?
     @State private var postedCard = false
+    // Publishable Cooks (issue #250): "Whole cook" is offered only for
+    // drafts that carry a recorded session (meal drafts and owned cook
+    // drafts).
+    @State private var hasSession = false
     @State private var cardPackRequested = false
     @State private var exporting = false
     @State private var exportDocument = PitTechArchiveDocument(data: Data())
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Publish a selected recipe, collection or actual cook. Anyone can read and save a public copy.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                Text("Publish a selected recipe, collection, actual cook or whole cook. Anyone can read and save a public copy.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                 if !account.signedIn {
                     Text("Sign in to publish. This sharing draft stays on this device, and sign-in won't publish it.")
                     Button("Sign in to continue") { signingIn = true }.accessibilityIdentifier("publication-sign-in")
@@ -61,7 +65,10 @@ struct NativePublicationView: View {
                     NavigationLink("Open Public cookbook") { NativeMyCookbookView() }.accessibilityIdentifier("publication-open-cookbook")
                     Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
                 } else {
-                    Picker("Publication", selection: $kind) { Text("Recipe").tag("recipe"); Text("Meal collection").tag("collection"); Text("Actual recorded cook").tag("attempt") }.disabled(busy)
+                    Picker("Publication", selection: $kind) {
+                        Text("Recipe").tag("recipe"); Text("Meal collection").tag("collection"); Text("Actual recorded cook").tag("attempt")
+                        if hasSession || kind == "cook" { Text("Whole cook").tag("cook") }
+                    }.disabled(busy)
                     Picker("Public credit", selection: $identity) { Text("Anonymous · a PitTech cook").tag("anonymous"); Text("My display name").tag("named") }.disabled(busy)
                     Picker("Category", selection: $category) {
                         ForEach(FoodCategory.all, id: \.id) { option in
@@ -109,7 +116,7 @@ struct NativePublicationView: View {
                 } else {
                     published = nil
                 }
-                do { let document = try? store.sharingDocument(draft); identity = document?.identityMode ?? "anonymous"; category = document?.category ?? FoodCategory.defaultId; try refreshPending(); if pending == nil, let prior = linked?.kind { kind = prior } } catch { message = error.localizedDescription }
+                do { let document = try? store.sharingDocument(draft); identity = document?.identityMode ?? "anonymous"; category = document?.category ?? FoodCategory.defaultId; hasSession = document?.sessionJson != nil; try refreshPending(); if pending == nil, let prior = linked?.kind { kind = prior } } catch { message = error.localizedDescription }
             }
             .onChange(of: identity) { _, _ in invalidate() }.onChange(of: category) { _, _ in invalidate() }.onChange(of: kind) { _, _ in invalidate() }.onChange(of: updating) { _, _ in invalidate() }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
@@ -171,15 +178,17 @@ struct NativePublicationView: View {
 }
 
 struct NativePublicationContent: View {
+    @Environment(CookStore.self) private var store
     let prepared: NativePreparedPublication
     private var payload: [String: JSONValue] { prepared.payload.objectValue ?? [:] }
     private var recipes: [[String: JSONValue]] { (payload["recipes"]?.arrayValue ?? []).compactMap(\.objectValue) }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(payload["title"]?.stringValue ?? "Public preview").font(PitTechFont.bannerTitle).accessibilityIdentifier("publication-preview-title")
-            Text(payload["kind"]?.stringValue == "attempt" ? "Actual recorded cook" : payload["kind"]?.stringValue == "collection" ? "Meal collection" : "Recipe").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            Text(payload["kind"]?.stringValue == "attempt" ? "Actual recorded cook" : payload["kind"]?.stringValue == "collection" ? "Meal collection" : payload["kind"]?.stringValue == "cook" ? "Whole cook" : "Recipe").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
             Text("\(recipes.count) selected recipes · \(prepared.photos.count) selected photos").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
             Text("Public credit: " + (payload["identityMode"]?.stringValue == "named" ? "your display name" : "a PitTech cook"))
+            if let session = payload["session"]?.objectValue { NativePublicSessionView(session: session, temperatureUnit: "°\(store.temperatureUnit)") }
             ForEach(recipes.indices, id: \.self) { index in
                 let recipe = recipes[index]
                 TurnInBannerText(recipe["title"]?.stringValue ?? "Recipe")

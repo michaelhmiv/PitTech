@@ -48,4 +48,48 @@ import XCTest
         let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         for (name, pack) in [("variant", variation), ("collection", collection), ("attempt", actual)] { try pack.bytes.write(to: folder.appendingPathComponent("pittech-native-publication-" + name + ".pittech"), options: .atomic) }
     }
+
+    // Publishable Cooks (issue #250): a finished meal's draft carries its
+    // recorded session, and the whole cook publishes as kind=cook —
+    // session object, every dish's story on the session clock — while a
+    // dish whose story is left out blocks the cook kind (it is excluded,
+    // or the meal publishes as a collection instead). Mirrors Android's
+    // PublicationAcceptanceTest case.
+    func testAWholeCookPublishesAsOneSessionWithEveryDishStory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "public-native-v1", withExtension: "json"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
+        let bytes = try XCTUnwrap(Data(base64Encoded: object["packBase64"] as! String)), file = root.appendingPathComponent("source.pittech")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); try bytes.write(to: file)
+        let store = CookStore(directory: root); await store.receiveArchive(at: file, cookPackOnly: true)
+        let intake = try XCTUnwrap(store.archiveIntake); try await store.importSelectedRecipes(intake, selected: Set(intake.recipes.map(\.id))); store.discardArchiveIntake()
+        let meal = try store.startRecipeMeal(title: "My publishable cook", revisionIds: intake.recipes.map(\.id))
+        let dishes = store.dishRecords(meal), pork = try XCTUnwrap(dishes.first { $0.name.lowercased().contains("pork") })
+        try store.saveNote(CookNoteDraft(cookId: meal, dishId: pork.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "My food on"))
+        try store.saveNote(CookNoteDraft(cookId: meal, dishId: pork.id, metadata: CookNoteMetadata(category: "action", action: "remove"), title: "My food off"))
+        store.finishCook(meal); try store.saveDishVerdict(cookId: meal, dishId: pork.id, rating: 5, again: true, notes: "Whole cook verdict")
+        let draft = try store.createSharingDraft(cookId: meal, dishIds: Set(dishes.map(\.id)))
+        var document = try store.sharingDocument(draft)
+        XCTAssertNotNil(document.sessionJson, "a meal draft captures its recorded session")
+        for index in document.entries.indices {
+            document.entries[index].included = true
+            document.entries[index].includeStory = document.entries[index].sourceDishId == pork.id
+        }
+        try store.saveSharingDraft(draft, document: document, expectedUpdated: store.sharingRecord(draft)?["updated"]?.numberValue ?? 0)
+        do { _ = try await store.preparePublication(draft, kind: "cook"); XCTFail("A cook publication accepted a dish without its story") } catch { }
+        document = try store.sharingDocument(draft)
+        for index in document.entries.indices { document.entries[index].includeStory = true }
+        try store.saveSharingDraft(draft, document: document, expectedUpdated: store.sharingRecord(draft)?["updated"]?.numberValue ?? 0)
+        let cook = try await store.preparePublication(draft, kind: "cook"), payload = try XCTUnwrap(cook.payload.objectValue)
+        XCTAssertEqual(payload["kind"]?.stringValue, "cook"); XCTAssertEqual(payload["measuredAttemptId"], .null)
+        let session = try XCTUnwrap(payload["session"]?.objectValue)
+        let duration = try XCTUnwrap(session["durationMillis"]?.numberValue); XCTAssertGreaterThanOrEqual(duration, 0)
+        XCTAssertEqual(session["serveAtOffsetMillis"], .null, "no serve plan was attached to this cook")
+        let recipes = try XCTUnwrap(payload["recipes"]?.arrayValue); XCTAssertEqual(recipes.count, 2)
+        let porkStory = try XCTUnwrap(recipes.first { ($0.objectValue?["title"]?.stringValue ?? "").lowercased().contains("pork") }?.objectValue?["story"]?.objectValue)
+        let anchorOffset = try XCTUnwrap(porkStory["anchorOffsetMillis"]?.numberValue); XCTAssertGreaterThanOrEqual(anchorOffset, 0)
+        XCTAssertTrue(recipes.allSatisfy { $0.objectValue?["story"] != nil && $0.objectValue?["story"] != .null }, "every dish in the cook carries its story")
+        let collection = try await store.preparePublication(draft, kind: "collection")
+        XCTAssertNil(collection.payload.objectValue?["session"], "other kinds gain no session object")
+    }
 }
