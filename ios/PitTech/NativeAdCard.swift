@@ -102,6 +102,12 @@ private struct NativeAdPlatformView: UIViewRepresentable {
         action.layer.cornerRadius = 9
         action.contentEdgeInsets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
 
+        // AdMob requires the AdChoices icon to render on native ads. The view
+        // sits in the card's top-right corner and is registered on the ad view
+        // before the native ad is assigned, mirroring the Android template.
+        let adChoicesView = AdChoicesView()
+        adChoicesView.translatesAutoresizingMaskIntoConstraints = false
+
         let textStack = UIStackView(arrangedSubviews: [adLabel, headline, body, action])
         textStack.axis = .vertical
         textStack.alignment = .leading
@@ -110,6 +116,7 @@ private struct NativeAdPlatformView: UIViewRepresentable {
 
         adView.addSubview(icon)
         adView.addSubview(textStack)
+        adView.addSubview(adChoicesView)
         icon.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             icon.leadingAnchor.constraint(equalTo: adView.leadingAnchor),
@@ -117,17 +124,24 @@ private struct NativeAdPlatformView: UIViewRepresentable {
             icon.widthAnchor.constraint(equalToConstant: 58),
             icon.heightAnchor.constraint(equalToConstant: 58),
             textStack.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 12),
-            textStack.trailingAnchor.constraint(equalTo: adView.trailingAnchor),
+            // The text column stops short of the top-right corner so neither
+            // the headline nor the body extends under the AdChoices icon.
+            textStack.trailingAnchor.constraint(equalTo: adChoicesView.leadingAnchor, constant: -8),
             textStack.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor),
             textStack.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor),
             textStack.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
-            action.heightAnchor.constraint(greaterThanOrEqualToConstant: 34)
+            action.heightAnchor.constraint(greaterThanOrEqualToConstant: 34),
+            adChoicesView.topAnchor.constraint(equalTo: adView.topAnchor),
+            adChoicesView.trailingAnchor.constraint(equalTo: adView.trailingAnchor),
+            adChoicesView.widthAnchor.constraint(equalToConstant: 24),
+            adChoicesView.heightAnchor.constraint(equalToConstant: 24)
         ])
 
         adView.headlineView = headline
         adView.bodyView = body
         adView.iconView = icon
         adView.callToActionView = action
+        adView.adChoicesView = adChoicesView
         adView.nativeAd = nativeAd
 
         headline.text = nativeAd.headline
