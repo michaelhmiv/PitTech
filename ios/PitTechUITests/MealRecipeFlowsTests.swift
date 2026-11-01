@@ -296,41 +296,52 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
     }
-    // Text entry is the fragile step on the hosted runners: a tap can
-    // land while a sheet is still settling and the field never takes
-    // first responder, so a bare typeText dies with "Neither element
-    // nor any descendant has keyboard focus" — across CI waves that
-    // signature hit the fork sheet's rub field, its target field, and
-    // an unrelated account field in another shard. Work patiently:
-    // tap the field's center until the field itself reports focus,
-    // type through the app (input follows first responder), then prove
-    // the typing landed by reading the field's value back; retry the
-    // whole cycle a bounded number of times before giving up.
+    // Text entry (#268): this helper used to gate typing on
+    // `field.hasFocus`, and that gate is what starved the chain. In
+    // all four thorough-gate attempts on 43a1af8 the fork sheet's
+    // name field raised the keyboard when tapped, yet `hasFocus`
+    // never read true for the rub field across 18 taps per attempt —
+    // so the helper exhausted its cycles without ever calling
+    // typeText and every drive bailed at the rub step (0 fork-target
+    // taps, 0 fork-save taps in every attempt's log). The AX
+    // keyboard-focus attribute is not a reliable oracle for these
+    // SwiftUI boxed fields, and no other test in the suite consults
+    // it: every other entry — including sheet fields in this same
+    // shard, in the same runs — taps the field and types directly.
+    // Follow the suite: tap the field, wait for the keyboard in
+    // short polls, type into the field, then prove the entry landed
+    // by reading the field's value back; retry the whole cycle a
+    // bounded number of times before giving up. Entry REPLACES the
+    // field's contents (what `clearingFirst` always meant, now true
+    // for every field, mirroring Android's replaceText): a pre-filled
+    // rub ("Salt and pepper") or target (162) must not survive as a
+    // prefix of the typed value.
     @discardableResult
     private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false) -> Bool {
         guard field.waitForExistence(timeout: 15) else { return false }
         if !field.isHittable { reveal(field, app: app) }
         Thread.sleep(forTimeInterval: 1)
-        for _ in 0..<3 {
-            // Alternate the tap mechanism — an element tap, then a raw
-            // window-coordinate tap at the field's center; the two reach
-            // first responder through different event paths, and a
-            // stalled session often answers one when it ignores the other.
-            for attempt in 0..<6 where !field.hasFocus {
-                if attempt % 2 == 0 {
-                    field.tap()
-                } else if field.frame.width > 0, field.frame.height > 0 {
-                    app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-                        .withOffset(CGVector(dx: field.frame.midX, dy: field.frame.midY)).tap()
-                }
-                _ = app.keyboards.firstMatch.waitForExistence(timeout: 2)
-                if field.hasFocus { break }
+        for cycle in 0..<3 {
+            // Alternate the tap mechanism across cycles — an element
+            // tap, then a raw window-coordinate tap at the field's
+            // center; the two reach first responder through different
+            // event paths, and a stalled session often answers one when
+            // it ignores the other.
+            if cycle % 2 == 0 || field.frame.width == 0 {
+                field.tap()
+            } else {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                    .withOffset(CGVector(dx: field.frame.midX, dy: field.frame.midY)).tap()
             }
-            guard field.hasFocus else { continue }
-            if clearingFirst, let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
-                app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
+            // Wait for the keyboard with short existence polls rather
+            // than one long snapshot wait (the poll idiom the
+            // live-board test's settle loop uses on a busy tree).
+            for _ in 0..<20 where !app.keyboards.firstMatch.exists { Thread.sleep(forTimeInterval: 0.5) }
+            if let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
             }
-            app.typeText(text)
+            field.typeText(text)
+            Thread.sleep(forTimeInterval: 0.5)
             if (field.value as? String)?.contains(text) == true { return true }
         }
         return false

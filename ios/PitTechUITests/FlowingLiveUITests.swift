@@ -70,9 +70,29 @@ final class FlowingLiveUITests: XCTestCase {
         let targetValue = app.staticTexts["pit-target-value"]
         reveal(targetValue, app: app)
         XCTAssertEqual(targetValue.label, "250°")
-        app.buttons["pit-target-plus"].tap()
+        // The tap must land on a settled, hittable button (#279): the
+        // board content below the fold is still materializing when the
+        // reveal scroll ends, and on degraded runners a blind tap
+        // could be swallowed — the write never happens and the waiter
+        // below times out at no fault of the stepper. Poll for
+        // hittable (the settle-loop idiom used further down this same
+        // test), then wait generously for the write; if the label
+        // still reads 250° after the first wait, the tap was swallowed
+        // — re-tap once and wait again. The assertion is unchanged:
+        // the stepper must show 255°.
+        let plus = app.buttons["pit-target-plus"]
+        let plusDeadline = Date().addingTimeInterval(30)
+        while !plus.isHittable && Date() < plusDeadline {
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(plus.isHittable, "pit-target-plus never became hittable")
+        plus.tap()
         let stepped = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)
-        XCTAssertEqual(XCTWaiter.wait(for: [stepped], timeout: 10), .completed, "stepper never showed 255°")
+        if XCTWaiter.wait(for: [stepped], timeout: 15) != .completed {
+            if targetValue.label == "250°" { plus.tap() }
+            let steppedAgain = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)
+            XCTAssertEqual(XCTWaiter.wait(for: [steppedAgain], timeout: 30), .completed, "stepper never showed 255°")
+        }
         XCTAssertTrue(app.buttons["live-conditions-changed"].exists)
 
         // 1.3 + Spread 02: the hero is a door to the full chart; the
@@ -87,9 +107,27 @@ final class FlowingLiveUITests: XCTestCase {
         // children: .contain; as a contained container it is not a
         // StaticText at all, and the staticTexts query timed out.)
         let readout = app.descendants(matching: .any)["live-chart-readout"]
-        XCTAssertTrue(readout.waitForExistence(timeout: 30))
+        // Poll with plain existence checks instead of waitForExistence
+        // (#279): the chart's first render saturates the accessibility
+        // tree for ~40 s under shard load (see the settle comment
+        // below), and a continuously-evaluating wait dies inside that
+        // window — "Timed out while evaluating UI query" — on code
+        // that passes identically in other runs; a 30 s budget can
+        // also simply expire under the render. Short polls with quiet
+        // intervals ride through, the idiom this test's own settle
+        // loop already relies on in the same busy sheet, and the
+        // budget covers the slow render.
+        let readoutDeadline = Date().addingTimeInterval(120)
+        while !readout.exists && Date() < readoutDeadline {
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTAssertTrue(readout.exists, "live-chart-readout never appeared")
         let delta = app.staticTexts["live-chart-ghost-delta"]
-        XCTAssertTrue(delta.waitForExistence(timeout: 10))
+        let deltaDeadline = Date().addingTimeInterval(60)
+        while !delta.exists && Date() < deltaDeadline {
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTAssertTrue(delta.exists, "live-chart-ghost-delta never appeared")
         // The delta speaks in the spec's own words (§2.4), identical on
         // both platforms; the fixture's geometry makes it exactly +38.
         XCTAssertTrue(delta.label.contains("+38 min vs last brisket at this point"), delta.label)
