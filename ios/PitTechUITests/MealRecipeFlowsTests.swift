@@ -296,43 +296,50 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
     }
-    // Text entry (#268) — two failure modes, both proven from CI
-    // logs, shaped this helper:
+    // Text entry (#268) — three failure modes, each proven from CI
+    // logs, shaped this helper. Read all three before touching it:
     //
-    // 1. The gate starvation (thorough gate on 43a1af8, 4/4
-    //    attempts): the old helper tapped the field up to 18 times
-    //    per drive, checking `hasFocus` in a tight tap/check loop,
-    //    and never once called typeText — every drive bailed at the
-    //    rub step (0 typeText, 0 fork-target taps, 0 fork-save taps
-    //    in every attempt). The checks raced the focus transfer and
-    //    the alternating coordinate taps could hand focus straight
-    //    back to the field just left.
-    // 2. The transfer race (this fix's first PR run): typing ~1 s
-    //    after the tap is too soon when focus must move between
-    //    fields — the rub entry landed ("House rub", verified), but
-    //    the target entry typed while the rub field still held focus
-    //    and died with "Neither element nor any descendant has
-    //    keyboard focus". The failure snapshot also shows why a tap
-    //    can miss entirely: with a sibling's keyboard up, the target
-    //    field's frame (y 522–563) reaches into the keyboard's band,
-    //    and a tap there is swallowed by the keyboard window even
-    //    though the field reports hittable.
+    // 1. `hasFocus` is not a focus oracle here (thorough gate on
+    //    43a1af8, 4/4 attempts; this fix's second PR run, 2/2
+    //    drives): helpers that gate typing on `field.hasFocus`
+    //    starve — the property was never once observed true for the
+    //    fork sheet's fields, across 18 gate-era taps and three
+    //    ~15 s polls per drive in run 2, even though run 1's failure
+    //    snapshot proves the rub field really held keyboard focus
+    //    after a bare tap (flagged "Keyboard Focused", value typed
+    //    and verified). The snapshot annotation and the property
+    //    evidently do not read the same signal in this environment.
+    //    Do not gate on it, in either direction.
+    // 2. Typing races the focus transfer (this fix's first PR run):
+    //    the rub entry landed bare — tap, type ~1 s later, value
+    //    verified — but the target entry typed ~1.2 s after its tap
+    //    while the rub field still held focus, dying with the hard
+    //    error "Neither element nor any descendant has keyboard
+    //    focus"; a hard error ends the test instead of letting the
+    //    caller relaunch and re-drive, so typing must wait out the
+    //    transfer. The transfer to the target also swaps the
+    //    keyboard to the decimal pad — and that swap is observable
+    //    without any focus signal: the letter keys disappear.
+    // 3. A raised keyboard swallows taps (same snapshot): with a
+    //    sibling's keyboard up, the target field's frame (y 522–563)
+    //    reaches into the keyboard's band; a tap there lands on the
+    //    keyboard window even though the field reports hittable.
     //
     // So, per cycle: lift the field clear of any raised keyboard,
-    // tap ONCE, then poll this field's own keyboard-focus state —
-    // the AX tree does report it (the focused field is flagged
-    // "Keyboard Focused" in the snapshot above) — for as long as a
-    // slow cross-field transfer, including a keyboard-type swap to
-    // the decimal pad, can take. Type only once focus is observed;
-    // typing unfocused is a hard failure that would end the test
-    // instead of letting the caller relaunch and re-drive. Entry
-    // REPLACES the field's contents (what `clearingFirst` always
-    // meant, now true for every field, mirroring Android's
+    // tap once (mechanism alternates between cycles, never inside
+    // the wait — a second tap at a stale coordinate can hand focus
+    // back to the field just left), then wait out the transfer —
+    // for a decimal-pad field, poll until the letter keys are gone
+    // (no swap within ~10 s means the tap never took focus: do not
+    // type, take the next cycle); otherwise let a plain settle
+    // elapse (the standard-to-standard transfer took ~1 s in run
+    // 1). Entry REPLACES the field's contents (what `clearingFirst`
+    // always meant, now true for every field, mirroring Android's
     // replaceText): a pre-filled rub ("Salt and pepper") or target
     // (162) must not survive as a prefix of the typed value. Prove
     // the entry by reading the field's value back before returning.
     @discardableResult
-    private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false) -> Bool {
+    private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false, decimalPad: Bool = false) -> Bool {
         guard field.waitForExistence(timeout: 15) else { return false }
         if !field.isHittable { reveal(field, app: app) }
         Thread.sleep(forTimeInterval: 1)
@@ -346,21 +353,27 @@ final class MealRecipeFlowsTests: XCTestCase {
                 app.swipeUp()
                 Thread.sleep(forTimeInterval: 0.5)
             }
-            // One tap per cycle; the mechanism alternates BETWEEN
-            // cycles, never inside the focus wait — a second tap at
-            // a stale coordinate can hand focus back to the field
-            // just left (failure mode 1).
+            // One tap per cycle (failure mode 1).
             if cycle % 2 == 0 || field.frame.width == 0 {
                 field.tap()
             } else {
                 app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
                     .withOffset(CGVector(dx: field.frame.midX, dy: field.frame.midY)).tap()
             }
-            // Poll for the transfer to land (up to ~15 s): checks
-            // every half second, not one early read (failure mode 1)
-            // and not a blind fixed delay (failure mode 2).
-            for _ in 0..<30 where !field.hasFocus { Thread.sleep(forTimeInterval: 0.5) }
-            guard field.hasFocus else { continue }
+            // Wait out the focus transfer (failure mode 2).
+            if decimalPad {
+                // The pad swap is the transfer receipt: poll for
+                // the letter keys to disappear. No swap, no typing —
+                // an unfocused typeText is a hard failure.
+                var swapped = false
+                for _ in 0..<20 where !swapped {
+                    Thread.sleep(forTimeInterval: 0.5)
+                    swapped = !app.keyboards.keys["a"].exists
+                }
+                guard swapped else { continue }
+            } else {
+                Thread.sleep(forTimeInterval: 2.5)
+            }
             if let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
                 field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
             }
@@ -435,7 +448,7 @@ final class MealRecipeFlowsTests: XCTestCase {
         // The story pre-fills the target with its last recorded food
         // temperature (162); the tweak replaces it with 165.
         let target = app.textFields["fork-target-0"]; reveal(target, app: app)
-        guard enterText("165", into: target, app: app, clearingFirst: true) else { return bail() }
+        guard enterText("165", into: target, app: app, clearingFirst: true, decimalPad: true) else { return bail() }
         let save = app.buttons["fork-save"]; reveal(save, app: app); save.tap()
         // Success lands back on the publication with the saved copy open.
         let openRecipes = app.buttons["public-open-recipes"]

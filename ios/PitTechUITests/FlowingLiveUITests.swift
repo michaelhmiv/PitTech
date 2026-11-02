@@ -70,21 +70,20 @@ final class FlowingLiveUITests: XCTestCase {
         let targetValue = app.staticTexts["pit-target-value"]
         reveal(targetValue, app: app)
         XCTAssertEqual(targetValue.label, "250°")
-        // The tap must land on a settled, hittable button (#279):
-        // reveal the BUTTON, not just the value beside it. On this
-        // suite's runners the value's reveal can exhaust its swipes
-        // with the button itself still below the fold — it then exists
-        // in the tree but never turns hittable no matter how long a
-        // passive poll waits (this PR's first run: 30 s of polls, all
-        // not-hittable, while a blind tap in other runs reached it).
-        // reveal() is the suite's own answer: swipe until hittable.
-        // Then wait generously for the write; if the label still
-        // reads 250° after the first wait, the tap was swallowed —
-        // re-tap once and wait again. The assertion is unchanged:
-        // the stepper must show 255°.
+        // Tap the stepper the way this test always did — directly
+        // (#279): hittability is not a usable signal for this button
+        // on the hosted runners. Across this PR's first two runs it
+        // read not-hittable for 30 s of passive polls and then
+        // through 16 reveal swipes on the board's own scroll view,
+        // while in the thorough gate's runs the plain tap after the
+        // value's reveal above synthesized cleanly every time (the
+        // gate failures were the post-tap waiter and the chart
+        // waits, never the tap). So: no hittability gate — tap, then
+        // wait generously for the write; if the label still reads
+        // 250° after the first wait, the tap was swallowed — re-tap
+        // once and wait again. The assertion is unchanged: the
+        // stepper must show 255°.
         let plus = app.buttons["pit-target-plus"]
-        reveal(plus, app: app)
-        XCTAssertTrue(plus.isHittable, "pit-target-plus never became hittable")
         plus.tap()
         let stepped = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)
         if XCTWaiter.wait(for: [stepped], timeout: 15) != .completed {
