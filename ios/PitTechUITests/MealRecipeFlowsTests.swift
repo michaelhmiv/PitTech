@@ -319,7 +319,10 @@ final class MealRecipeFlowsTests: XCTestCase {
     //    caller relaunch and re-drive, so typing must wait out the
     //    transfer. The transfer to the target also swaps the
     //    keyboard to the decimal pad — and that swap is observable
-    //    without any focus signal: the letter keys disappear.
+    //    without any focus signal: the pad's digit keys replace the
+    //    letter keys. (Run 3 addendum: the swap must be confirmed
+    //    positive and persistent — mid-transfer, the letter keys
+    //    vanish while no field yet holds focus.)
     // 3. A raised keyboard swallows taps (same snapshot): with a
     //    sibling's keyboard up, the target field's frame (y 522–563)
     //    reaches into the keyboard's band; a tap there lands on the
@@ -362,13 +365,25 @@ final class MealRecipeFlowsTests: XCTestCase {
             }
             // Wait out the focus transfer (failure mode 2).
             if decimalPad {
-                // The pad swap is the transfer receipt: poll for
-                // the letter keys to disappear. No swap, no typing —
-                // an unfocused typeText is a hard failure.
+                // The pad swap is the transfer receipt — but demand
+                // it positive and persistent: the pad fully presented
+                // (keyboard up, a digit key present, the letter keys
+                // gone) across three consecutive polls. A single
+                // absent read is mid-transfer noise (run 3: one "a"
+                // check 1.3 s after the tap read gone while the
+                // dispatcher's own snapshot showed NO field holding
+                // focus — the old field had resigned, the new one
+                // had not yet taken over). No sustained swap, no
+                // typing — an unfocused typeText is a hard failure.
+                var stable = 0
                 var swapped = false
-                for _ in 0..<20 where !swapped {
+                for _ in 0..<40 where !swapped {
                     Thread.sleep(forTimeInterval: 0.5)
-                    swapped = !app.keyboards.keys["a"].exists
+                    let padShown = app.keyboards.firstMatch.exists
+                        && app.keyboards.keys["1"].exists
+                        && !app.keyboards.keys["a"].exists
+                    stable = padShown ? stable + 1 : 0
+                    swapped = stable >= 3
                 }
                 guard swapped else { continue }
             } else {

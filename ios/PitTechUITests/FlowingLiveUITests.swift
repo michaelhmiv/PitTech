@@ -104,17 +104,33 @@ final class FlowingLiveUITests: XCTestCase {
         // (As a merged StaticText it was findable before the card gained
         // children: .contain; as a contained container it is not a
         // StaticText at all, and the staticTexts query timed out.)
+        // WAIT OUT THE RENDER QUERY-FREE (#279, restructured after
+        // run 3): the chart's first render saturates the accessibility
+        // tree for ~40 s under shard load, and any query issued into
+        // that window can wedge inside XCTest's snapshot evaluation
+        // until it hard-errors — "Timed out while evaluating UI
+        // query". That is how the gate's waitForExistence died, and
+        // run 3 proved a plain .exists poll on the readout dies the
+        // same way: two quick false reads early (the app not yet in
+        // the heavy phase), then the third evaluation wedged for
+        // ~90 s of internal retries. The waiting strategy was never
+        // the variable — issuing queries mid-render is. Polling a
+        // "calmer" element has the same exposure (every poll is a
+        // snapshot), so the only safe wait is one that issues NO
+        // queries: sleep past the observed render window, then run
+        // the test's own settle check and content asserts against a
+        // calm tree, as in the runs that pass.
+        Thread.sleep(forTimeInterval: 60)
+        let closeButton = app.buttons["live-chart-close"]
+        let settleDeadline = Date().addingTimeInterval(120)
+        while !closeButton.isHittable && Date() < settleDeadline {
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTAssertTrue(closeButton.isHittable)
         let readout = app.descendants(matching: .any)["live-chart-readout"]
-        // Poll with plain existence checks instead of waitForExistence
-        // (#279): the chart's first render saturates the accessibility
-        // tree for ~40 s under shard load (see the settle comment
-        // below), and a continuously-evaluating wait dies inside that
-        // window — "Timed out while evaluating UI query" — on code
-        // that passes identically in other runs; a 30 s budget can
-        // also simply expire under the render. Short polls with quiet
-        // intervals ride through, the idiom this test's own settle
-        // loop already relies on in the same busy sheet, and the
-        // budget covers the slow render.
+        // With the tree settled, short existence polls (not a
+        // continuously-evaluating wait) confirm the readout and the
+        // ghost delta; every assertion below is unchanged.
         let readoutDeadline = Date().addingTimeInterval(120)
         while !readout.exists && Date() < readoutDeadline {
             Thread.sleep(forTimeInterval: 2)
@@ -129,17 +145,6 @@ final class FlowingLiveUITests: XCTestCase {
         // The delta speaks in the spec's own words (§2.4), identical on
         // both platforms; the fixture's geometry makes it exactly +38.
         XCTAssertTrue(delta.label.contains("+38 min vs last brisket at this point"), delta.label)
-        // The chart engine's first render keeps the accessibility tree
-        // busy for a long stretch on the simulator (observed ~40 s
-        // under shard load; queries time out mid-render). The sheet's
-        // chrome is already asserted above; before tapping controls,
-        // wait until the toolbar reports hittable — the settle signal.
-        let closeButton = app.buttons["live-chart-close"]
-        let settleDeadline = Date().addingTimeInterval(120)
-        while !closeButton.isHittable && Date() < settleDeadline {
-            Thread.sleep(forTimeInterval: 2)
-        }
-        XCTAssertTrue(closeButton.isHittable)
         app.buttons["live-chart-preset-last2h"].tap()
         XCTAssertTrue(readout.exists)
         app.buttons["live-chart-close"].tap()
