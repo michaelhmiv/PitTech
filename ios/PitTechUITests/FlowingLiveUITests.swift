@@ -97,11 +97,10 @@ final class FlowingLiveUITests: XCTestCase {
         reveal(hero, app: app)
         XCTAssertTrue(hero.waitForExistence(timeout: 10))
         hero.tap()
-        // The readout identifier sits on the readout CARD (a container),
-        // not a Text — query it type-agnostically, like the brand strip.
-        // (As a merged StaticText it was findable before the card gained
-        // children: .contain; as a contained container it is not a
-        // StaticText at all, and the staticTexts query timed out.)
+        // The readout identifier sits on the readout CARD (a .contain
+        // container), not a Text — it is queried as otherElements
+        // below (round 6: the type-agnostic query it replaces never
+        // completed an evaluation on this screen; see there).
         // WAIT OUT THE RENDER QUERY-FREE (#279, restructured after
         // run 3): the chart's first render saturates the accessibility
         // tree for ~40 s under shard load, and any query issued into
@@ -125,19 +124,30 @@ final class FlowingLiveUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 2)
         }
         XCTAssertTrue(closeButton.isHittable)
-        let readout = app.descendants(matching: .any)["live-chart-readout"]
-        // With the tree settled, short existence polls (not a
-        // continuously-evaluating wait) confirm the readout and the
-        // ghost delta; every assertion below is unchanged.
-        let readoutDeadline = Date().addingTimeInterval(120)
+        // Query the readout by its real element type (round 6, from
+        // run 5's retained screen recording): the recording's final
+        // frame shows the chart COMPLETE on screen — readout card
+        // ("Probe 175°", "+38 min vs last brisket at this point"),
+        // presets, both plotted series — while the type-agnostic
+        // descendants(.any) evaluation never returned at all (~110 s
+        // of internal retries, then the hard snapshot timeout). On
+        // this screen the whole-tree query is the one evaluation
+        // that cannot complete on a loaded runner; typed finds
+        // (buttons above) completed at ~31 s a pass. The readout is
+        // a .contain container (LiveChartView), the same
+        // construction as pit-card and meals-empty-card, which this
+        // suite queries as otherElements — so query it that way,
+        // and poll at a lazy interval so evaluations never stack.
+        let readout = app.otherElements["live-chart-readout"]
+        let readoutDeadline = Date().addingTimeInterval(240)
         while !readout.exists && Date() < readoutDeadline {
-            Thread.sleep(forTimeInterval: 2)
+            Thread.sleep(forTimeInterval: 5)
         }
         XCTAssertTrue(readout.exists, "live-chart-readout never appeared")
         let delta = app.staticTexts["live-chart-ghost-delta"]
-        let deltaDeadline = Date().addingTimeInterval(60)
+        let deltaDeadline = Date().addingTimeInterval(120)
         while !delta.exists && Date() < deltaDeadline {
-            Thread.sleep(forTimeInterval: 2)
+            Thread.sleep(forTimeInterval: 5)
         }
         XCTAssertTrue(delta.exists, "live-chart-ghost-delta never appeared")
         // The delta speaks in the spec's own words (§2.4), identical on

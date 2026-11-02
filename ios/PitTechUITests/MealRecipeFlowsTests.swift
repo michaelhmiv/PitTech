@@ -352,6 +352,29 @@ final class MealRecipeFlowsTests: XCTestCase {
         guard field.waitForExistence(timeout: 15) else { return false }
         if !field.isHittable { reveal(field, app: app) }
         Thread.sleep(forTimeInterval: 1)
+        // GEOMETRY GATE (round 6, from run 5's retained screen
+        // recording — the first photographic evidence in this fix):
+        // with a sibling's keyboard up, the LAST field on the sheet
+        // (the target) sits half-buried under the keyboard, its
+        // center covered by the keyboard's suggestion bar — while
+        // still reporting hittable, and while the keyboard
+        // element's own frame starts BELOW that bar. Every tap and
+        // press in runs 4–5 synthesized at the field's center,
+        // landed on the inert suggestion strip, and focus never
+        // moved (the recording shows the cursor still in the rub
+        // field, suggestions still offering "rub / ruby / rubbing",
+        // across all three target presses; the fields above the
+        // keyboard band — name, rub — worked under every
+        // mechanism). So before pressing: swipe the sheet up until
+        // the field's center clears the keyboard's top edge by a
+        // margin that covers the suggestion bar, re-measuring both
+        // frames after each swipe. If a swipe dismisses the
+        // keyboard instead, that also satisfies the gate.
+        let keyboard = app.keyboards.firstMatch
+        for _ in 0..<6 where keyboard.exists && field.frame.midY > keyboard.frame.minY - 64 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 0.6)
+        }
         for _ in 0..<3 {
             UIPasteboard.general.string = text
             field.press(forDuration: 1.2)
