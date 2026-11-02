@@ -721,4 +721,5 @@ jobs:
             build/${{ matrix.shard }}.log
             build/${{ matrix.shard }}-summary.json
             build/${{ matrix.shard }}-counts.txt
+            build/${{ matrix.shard }}.xcresult
           if-no-files-found: ignore

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -296,42 +297,133 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
     }
-    // Text entry is the fragile step on the hosted runners: a tap can
-    // land while a sheet is still settling and the field never takes
-    // first responder, so a bare typeText dies with "Neither element
-    // nor any descendant has keyboard focus" — across CI waves that
-    // signature hit the fork sheet's rub field, its target field, and
-    // an unrelated account field in another shard. Work patiently:
-    // tap the field's center until the field itself reports focus,
-    // type through the app (input follows first responder), then prove
-    // the typing landed by reading the field's value back; retry the
-    // whole cycle a bounded number of times before giving up.
+    // Text entry (#268) — rounds 1–4 of this fix (PR #280) each
+    // failed on the same choke point, and their logs pin down what
+    // this runner fleet does to the fork sheet's fields:
+    //
+    // 1. `hasFocus` is not a focus oracle here (thorough gate on
+    //    43a1af8, 4/4 attempts; run 2, 2/2 drives): helpers that gate
+    //    typing on `field.hasFocus` starve — the property never read
+    //    true across 18 gate-era taps and three ~15 s polls per
+    //    drive, even though run 1's failure snapshot proves the rub
+    //    field really held keyboard focus after a bare tap (flagged
+    //    "Keyboard Focused", value typed and verified). The snapshot
+    //    annotation and the property do not read the same signal in
+    //    this environment. Do not gate on it, in either direction.
+    // 2. Unguarded `typeText` is a hard failure the moment focus is
+    //    not yet engaged, and focus TRANSFER between sibling fields
+    //    is the unreliable step: rub entry (tapped from the name
+    //    field) landed 3/3 across runs 1/3/4, but target entry never
+    //    did — run 3 typed into a mid-transfer void (no field held
+    //    focus in the dispatcher's own snapshot), and run 4's taps
+    //    were swallowed outright: ~60 s of polling showed the
+    //    keyboard up the whole time, the decimal pad never
+    //    presented, focus never leaving rub. The same
+    //    dropped-activation signature hit ui-3's stepper in run 4
+    //    (two clean taps, zero effect). Taps on this fleet are
+    //    intermittently eaten — and no wait duration fixes a tap
+    //    that never arrived.
+    //
+    // Round 5 changes the MECHANISM, not the timing:
+    // - Focus is requested with a LONG PRESS — a different gesture
+    //   path than a tap, and one a settling scroll view does not
+    //   consume as a scroll-stopper.
+    // - Focus is PROVEN before any text moves: the press raises the
+    //   field's edit menu, which exists only while this field is
+    //   being edited. No menu, no mutation — the cycle retries.
+    // - Text moves through the PASTEBOARD, set from this runner
+    //   process (the simulator shares one pasteboard): Select All
+    //   (when offered) then Paste replaces the field's contents —
+    //   a pre-filled rub ("Salt and pepper") or target (162) must
+    //   not survive as a prefix — and no keystroke depends on
+    //   which keyboard is presented or on `typeText` finding a
+    //   responder.
+    // - Fallback, decimal-pad fields only: if the menu never
+    //   materializes but the pad swap is POSITIVELY and
+    //   PERSISTENTLY shown (keyboard up, a digit key present, the
+    //   letter keys gone, three consecutive polls — the pad's
+    //   shape proves this specific field holds focus, which a
+    //   standard keyboard cannot prove for its own fields), type
+    //   under that proof: the run-1-proven pattern with the
+    //   transfer waited out.
+    // The field's resulting value is the receipt, as before.
     @discardableResult
-    private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false) -> Bool {
+    private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false, decimalPad: Bool = false) -> Bool {
         guard field.waitForExistence(timeout: 15) else { return false }
         if !field.isHittable { reveal(field, app: app) }
         Thread.sleep(forTimeInterval: 1)
+        // GEOMETRY GATE (round 6, from run 5's retained screen
+        // recording — the first photographic evidence in this fix):
+        // with a sibling's keyboard up, the LAST field on the sheet
+        // (the target) sits half-buried under the keyboard, its
+        // center covered by the keyboard's suggestion bar — while
+        // still reporting hittable, and while the keyboard
+        // element's own frame starts BELOW that bar. Every tap and
+        // press in runs 4–5 synthesized at the field's center,
+        // landed on the inert suggestion strip, and focus never
+        // moved (the recording shows the cursor still in the rub
+        // field, suggestions still offering "rub / ruby / rubbing",
+        // across all three target presses; the fields above the
+        // keyboard band — name, rub — worked under every
+        // mechanism). So before pressing: swipe the sheet up until
+        // the field's center clears the keyboard's top edge by a
+        // margin that covers the suggestion bar, re-measuring both
+        // frames after each swipe. If a swipe dismisses the
+        // keyboard instead, that also satisfies the gate.
+        let keyboard = app.keyboards.firstMatch
+        for _ in 0..<6 where keyboard.exists && field.frame.midY > keyboard.frame.minY - 64 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 0.6)
+        }
         for _ in 0..<3 {
-            // Alternate the tap mechanism — an element tap, then a raw
-            // window-coordinate tap at the field's center; the two reach
-            // first responder through different event paths, and a
-            // stalled session often answers one when it ignores the other.
-            for attempt in 0..<6 where !field.hasFocus {
-                if attempt % 2 == 0 {
-                    field.tap()
-                } else if field.frame.width > 0, field.frame.height > 0 {
-                    app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-                        .withOffset(CGVector(dx: field.frame.midX, dy: field.frame.midY)).tap()
+            UIPasteboard.general.string = text
+            field.press(forDuration: 1.2)
+            let paste = app.menuItems["Paste"]
+            let selectAll = app.menuItems["Select All"]
+            var menuUp = false
+            let menuDeadline = Date().addingTimeInterval(12)
+            while Date() < menuDeadline {
+                if paste.exists || selectAll.exists { menuUp = true; break }
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            if menuUp {
+                if selectAll.exists {
+                    // Replace semantics: select the seeded text, then
+                    // paste over the selection; the menu re-presents
+                    // with Paste available.
+                    selectAll.tap()
+                    guard paste.waitForExistence(timeout: 10) else { continue }
                 }
-                _ = app.keyboards.firstMatch.waitForExistence(timeout: 2)
-                if field.hasFocus { break }
+                UIPasteboard.general.string = text
+                paste.tap()
+            } else if decimalPad {
+                // Fallback under positive, persistent pad proof (see
+                // header): the swap sustained across three polls
+                // means this field — not a sibling — holds focus.
+                var stable = 0
+                var swapped = false
+                for _ in 0..<24 where !swapped {
+                    Thread.sleep(forTimeInterval: 0.5)
+                    let padShown = app.keyboards.firstMatch.exists
+                        && app.keyboards.keys["1"].exists
+                        && !app.keyboards.keys["a"].exists
+                    stable = padShown ? stable + 1 : 0
+                    swapped = stable >= 3
+                }
+                guard swapped else { continue }
+                if let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
+                    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
+                }
+                field.typeText(text)
+            } else {
+                continue
             }
-            guard field.hasFocus else { continue }
-            if clearingFirst, let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
-                app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
+            // The value is the receipt.
+            let deadline = Date().addingTimeInterval(10)
+            while Date() < deadline {
+                if (field.value as? String) == text { return true }
+                Thread.sleep(forTimeInterval: 0.5)
             }
-            app.typeText(text)
-            if (field.value as? String)?.contains(text) == true { return true }
         }
         return false
     }
@@ -400,7 +492,7 @@ final class MealRecipeFlowsTests: XCTestCase {
         // The story pre-fills the target with its last recorded food
         // temperature (162); the tweak replaces it with 165.
         let target = app.textFields["fork-target-0"]; reveal(target, app: app)
-        guard enterText("165", into: target, app: app, clearingFirst: true) else { return bail() }
+        guard enterText("165", into: target, app: app, clearingFirst: true, decimalPad: true) else { return bail() }
         let save = app.buttons["fork-save"]; reveal(save, app: app); save.tap()
         // Success lands back on the publication with the saved copy open.
         let openRecipes = app.buttons["public-open-recipes"]
@@ -410,7 +502,22 @@ final class MealRecipeFlowsTests: XCTestCase {
         // day board leads with a start time.
         let planThis = app.buttons["public-plan-this"]; reveal(planThis, app: app); planThis.tap()
         let headline = app.staticTexts["plan-board-headline"]
-        guard headline.waitForExistence(timeout: 20) else { return bail() }
+        // Poll for the headline on a runner-scale budget (round 7):
+        // Plan this fires an async Task (fork-as-written if needed,
+        // build the plan, present the planner), and in run 6 both
+        // drives expired at exactly this wait's 20 s while the
+        // retained recording shows the presented sheet fully
+        // rendered — "Food on 9:20 AM" headline, the fork's name
+        // carried in — once the Task landed. The destination is
+        // right; the fuse was shorter than the leg on a loaded
+        // runner. Poll instead of one fixed wait; the guard and
+        // the label assertion below are unchanged.
+        let headlineDeadline = Date().addingTimeInterval(150)
+        while !headline.exists && Date() < headlineDeadline {
+            Thread.sleep(forTimeInterval: 2)
+        }
+        let headlineFound = headline.exists
+        guard headlineFound else { return bail() }
         guard headline.label.contains(":") else { return bail() }
         let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "recorded cook")).firstMatch
         for _ in 0..<6 where !note.exists { app.swipeUp() }
