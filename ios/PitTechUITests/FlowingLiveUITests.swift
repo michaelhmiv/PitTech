@@ -84,9 +84,35 @@ final class FlowingLiveUITests: XCTestCase {
         // sits inside the window, clear of the nav and tab bars.
         let plus = app.buttons["pit-target-plus"]
         let windowFrame = app.windows.firstMatch.frame
-        for _ in 0..<8 {
+        // The in-band sample must be a SETTLED position, read twice
+        // (#279 follow-up, from run 41432357674): on the slow runners
+        // of attempts 1–2 every frame evaluation took seconds, so the
+        // single trusted sample was inherently post-settle — the
+        // servo spent three corrective swipes getting there and one
+        // tap then stepped within ~1 s. On attempt 3's fast runner
+        // the evaluations returned in ~0.5–3 s: reveal() exited after
+        // ONE swipe, the servo broke on the FIRST in-band sample,
+        // taken ~0.6 s after its single corrective swipe — inside
+        // the scroll's bounce/deceleration window, before the view
+        // came to rest — and all six receipt taps then synthesized
+        // cleanly at a position the settled view did not hold (the
+        // loop's own guard re-reads prove the label stayed 250°
+        // throughout). A fast sample can catch a transient in-band
+        // frame; two identical in-band frames a beat apart cannot —
+        // the scroll has provably come to rest at the tapped
+        // position. The stability check spends loop iterations
+        // without swiping, so the cap rises 8 → 10; the band, the
+        // swipe directions, and the settle sleeps are unchanged.
+        var settledMidY: CGFloat?
+        for _ in 0..<10 {
             let midY = plus.frame.midY
-            if midY > windowFrame.minY + 120 && midY < windowFrame.maxY - 100 { break }
+            if midY > windowFrame.minY + 120 && midY < windowFrame.maxY - 100 {
+                if let settledMidY, abs(midY - settledMidY) < 1 { break }
+                settledMidY = midY
+                Thread.sleep(forTimeInterval: 1)
+                continue
+            }
+            settledMidY = nil
             if midY <= windowFrame.minY + 120 { app.swipeDown() } else { app.swipeUp() }
             Thread.sleep(forTimeInterval: 0.6)
         }
@@ -102,6 +128,12 @@ final class FlowingLiveUITests: XCTestCase {
         // is unchanged: the stepper must show 255°.
         var stepped = false
         for _ in 0..<6 where !stepped {
+            // A step that lands between the waiter's last poll and
+            // this re-check is the receipt, not an exit: recognize
+            // 255° here instead of breaking with `stepped` still
+            // false. Any other value (a double-step, a reset) still
+            // breaks, and the assertion below is unchanged.
+            if targetValue.label == "255°" { stepped = true; break }
             guard targetValue.label == "250°" else { break }
             plus.tap()
             let stepWait = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)
@@ -138,7 +170,18 @@ final class FlowingLiveUITests: XCTestCase {
         // calm tree, as in the runs that pass.
         Thread.sleep(forTimeInterval: 60)
         let closeButton = app.buttons["live-chart-close"]
-        let settleDeadline = Date().addingTimeInterval(120)
+        // Budget sized to the measured per-poll service cost (#279
+        // follow-up, run 41432357674 attempts 1–2): with the chart
+        // AX-subtree collapse in place every evaluation on this sheet
+        // COMPLETES (zero snapshot hard errors), but each isHittable
+        // poll costs ~93 s (three internal snapshot retries at ~31 s
+        // each; polls began at t≈120.9 / 215.0 / 307.1). The old
+        // 120 s deadline therefore admitted fewer than two full polls
+        // and expired mid-third. 300 s admits at least three full
+        // polls (3 × ~93 s ≈ 279 s) with margin. The settle CONDITION
+        // is unchanged — the close button hittable, asserted below
+        // exactly as before; only the budget is sized to the service.
+        let settleDeadline = Date().addingTimeInterval(300)
         while !closeButton.isHittable && Date() < settleDeadline {
             Thread.sleep(forTimeInterval: 2)
         }
