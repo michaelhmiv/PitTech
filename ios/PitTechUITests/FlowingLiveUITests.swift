@@ -24,6 +24,29 @@ final class FlowingLiveUITests: XCTestCase {
         }
     }
 
+    /// Drags the board's scroll view by a MEASURED amount of content
+    /// travel, in points (the content follows the finger: a positive
+    /// shift drags the content down, moving the element's window
+    /// midY down by the same amount; the drag tracks the finger,
+    /// then holds a beat so no momentum carries past the target). The servos below actuate with this instead of full
+    /// swipes for the reason the stepper evidence proved (run
+    /// 41504631806, retained recording, measured in the stepper
+    /// comment further down): a full swipe is bang-bang — it can only
+    /// park an element at its travel extremes — and for the pit
+    /// stepper one extreme is inside the fixed bottom shortcut bar's
+    /// footprint, where a tap's delivery is a coin flip. A computed
+    /// drag can stop at any offset, so the element can be parked at
+    /// the band CENTER, clear of both bars, and the loop's next
+    /// sample corrects whatever the drag over- or under-travelled.
+    private func dragBoardContent(by shift: CGFloat, app: XCUIApplication) {
+        let clamped = max(-350, min(350, shift))
+        guard abs(clamped) > 4 else { return }
+        let scrollView = app.scrollViews.firstMatch
+        let start = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = start.withOffset(CGVector(dx: 0, dy: clamped))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .default, thenHoldForDuration: 0.25)
+    }
+
     /// Settled-position tap for BOARD (scroll-view) elements — the
     /// gate the stepper servo proved (#279 follow-up) and the hero
     /// door now gets as well (third mechanism, below). reveal()'s
@@ -31,16 +54,25 @@ final class FlowingLiveUITests: XCTestCase {
     /// misreports both for elements whose scroll is still in motion:
     /// a tap synthesized from a transient frame lands wherever that
     /// frame pointed, not where the settled element sits. Servo on
-    /// the FRAME instead: swipe toward the element until its center
-    /// sits in the same in-window band the stepper uses, and tap
-    /// only when the SAME frame (midX and midY) reads twice, a beat
-    /// apart — two identical frames spanning a beat cannot be a
+    /// the FRAME instead: drag the element's center to the band
+    /// center (see dragBoardContent for why drags, not swipes) and
+    /// tap only when the SAME frame (midX and midY) reads twice, a
+    /// beat apart — two identical frames spanning a beat cannot be a
     /// scroll still bouncing, so the tap goes to the position the
-    /// settled view actually holds. Returns false when the element
-    /// never settles into the band; the caller fails, naming it.
+    /// settled view actually holds. The band's bottom edge sits
+    /// ABOVE the fixed bottom shortcut bar: that bar's strip starts
+    /// ~146 pt above the window's bottom (measured from the run
+    /// 41504631806 recording), so a center parked lower than
+    /// maxY − 170 can sit inside the bar's footprint even when the
+    /// accessibility frame calls it in-window. Returns false when
+    /// the element never settles into the band; the caller fails,
+    /// naming it.
     @discardableResult
     private func tapBoardElementWhenSettled(_ element: XCUIElement, app: XCUIApplication) -> Bool {
         let windowFrame = app.windows.firstMatch.frame
+        let bandTop = windowFrame.minY + 120
+        let bandBottom = windowFrame.maxY - 170
+        let bandCenter = (bandTop + bandBottom) / 2
         var settledMidY: CGFloat?
         var settledMidX: CGFloat?
         for _ in 0..<12 {
@@ -52,7 +84,7 @@ final class FlowingLiveUITests: XCTestCase {
                 continue
             }
             let frame = element.frame
-            if frame.midY > windowFrame.minY + 120 && frame.midY < windowFrame.maxY - 100 {
+            if frame.midY > bandTop && frame.midY < bandBottom {
                 if let settledMidY, let settledMidX,
                    abs(frame.midY - settledMidY) < 1, abs(frame.midX - settledMidX) < 1 {
                     element.tap()
@@ -65,7 +97,7 @@ final class FlowingLiveUITests: XCTestCase {
             }
             settledMidY = nil
             settledMidX = nil
-            if frame.midY <= windowFrame.minY + 120 { app.scrollViews.firstMatch.swipeDown() } else { app.scrollViews.firstMatch.swipeUp() }
+            dragBoardContent(by: bandCenter - frame.midY, app: app)
             Thread.sleep(forTimeInterval: 0.6)
         }
         return false
@@ -174,17 +206,45 @@ final class FlowingLiveUITests: XCTestCase {
         // position. The stability check spends loop iterations
         // without swiping, so the cap rises 8 → 10; the band, the
         // swipe directions, and the settle sleeps are unchanged.
+        // ROUND 8 (run 41504631806, three executed attempts, all
+        // failed HERE with the gate verifiably engaged): the retained
+        // recording + landmark measurement name the real cause, and
+        // it is the band itself. The board's fixed bottom shortcut
+        // bar starts ~146 pt above the window's bottom; the servo's
+        // band ran to maxY − 100, so it certified — and the receipt
+        // loop then tapped — a resting center measured at ≈744 pt,
+        // ~16 pt INSIDE that bar's footprint, where whether the
+        // synthesized touch reaches the button or dies in the bar's
+        // strip is hit-test luck (it fired from the same visual
+        // position in run 41468955142; it swallowed 18 of 18 taps
+        // here). The full swipes are the other half: bang-bang
+        // actuation can only park this row at its travel extremes
+        // (≈43 pt or ≈744 pt on this content), never mid-band, and
+        // the swipe-down's rubber-band spring-back (~166 pt, still
+        // completing seconds later in the recording) means the two
+        // agreeing samples can certify geometry the renderer has
+        // already left. The servo now (1) ends its band at
+        // maxY − 170, above the bar's strip, and (2) actuates with
+        // dragBoardContent — a computed drag toward the band CENTER
+        // that can stop at any offset — so the row is parked clear
+        // of the bar before the unchanged two-sample gate certifies
+        // the position and the unchanged receipt loop taps. The cap
+        // is 12 because drag corrections spend iterations like
+        // stability samples do.
+        let bandTop = windowFrame.minY + 120
+        let bandBottom = windowFrame.maxY - 170
+        let bandCenter = (bandTop + bandBottom) / 2
         var settledMidY: CGFloat?
-        for _ in 0..<10 {
+        for _ in 0..<12 {
             let midY = plus.frame.midY
-            if midY > windowFrame.minY + 120 && midY < windowFrame.maxY - 100 {
+            if midY > bandTop && midY < bandBottom {
                 if let settledMidY, abs(midY - settledMidY) < 1 { break }
                 settledMidY = midY
                 Thread.sleep(forTimeInterval: 1)
                 continue
             }
             settledMidY = nil
-            if midY <= windowFrame.minY + 120 { app.swipeDown() } else { app.swipeUp() }
+            dragBoardContent(by: bandCenter - midY, app: app)
             Thread.sleep(forTimeInterval: 0.6)
         }
         // Tap the stepper — and verify each tap by its RECEIPT
