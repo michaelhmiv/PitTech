@@ -376,10 +376,28 @@ final class FlowingLiveUITests: XCTestCase {
         // is unchanged — the close button hittable, asserted below
         // exactly as before; only the budget is sized to the service.
         let settleDeadline = Date().addingTimeInterval(300)
-        while !closeButton.isHittable && Date() < settleDeadline {
-            Thread.sleep(forTimeInterval: 2)
+        // ROUND 9 (run 41534998086 attempt 1): the loop now KEEPS
+        // the value it observes, and the assert below judges that
+        // kept value — the previous shape re-read isHittable after
+        // the loop, and on this fleet the re-read is not free or
+        // neutral: each evaluation on this sheet costs ~31 s per
+        // snapshot attempt, and an attempt that times out returns
+        // false. Attempt 1's log shows the loop's own polls
+        // completing at t≈189 / 220 / 251 with the failure asserting
+        // at t≈282 — one final ~31 s timeout cadence after the last
+        // poll — i.e. the condition was observed satisfied inside
+        // the budget and the post-loop re-read then timed out and
+        // contradicted it. Same class as the stepper receipt-guard
+        // correction in round 7 (a receipt landing between the
+        // waiter's last poll and a re-check is the receipt, not a
+        // failure). The CONDITION and the BUDGET are unchanged: the
+        // assert still fails whenever no evaluation observes the
+        // close button hittable within the 300 s deadline.
+        var closeHittable = false
+        while !closeHittable && Date() < settleDeadline {
+            closeHittable = closeButton.isHittable
+            if !closeHittable { Thread.sleep(forTimeInterval: 2) }
         }
-        let closeHittable = closeButton.isHittable
         XCTAssertTrue(closeHittable)
         // Query the readout by its real element type (round 6, from
         // run 5's retained screen recording): the recording's final
