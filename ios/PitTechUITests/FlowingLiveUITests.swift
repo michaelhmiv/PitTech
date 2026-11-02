@@ -70,27 +70,25 @@ final class FlowingLiveUITests: XCTestCase {
         let targetValue = app.staticTexts["pit-target-value"]
         reveal(targetValue, app: app)
         XCTAssertEqual(targetValue.label, "250°")
-        // Tap the stepper the way this test always did — directly
-        // (#279): hittability is not a usable signal for this button
-        // on the hosted runners. Across this PR's first two runs it
-        // read not-hittable for 30 s of passive polls and then
-        // through 16 reveal swipes on the board's own scroll view,
-        // while in the thorough gate's runs the plain tap after the
-        // value's reveal above synthesized cleanly every time (the
-        // gate failures were the post-tap waiter and the chart
-        // waits, never the tap). So: no hittability gate — tap, then
-        // wait generously for the write; if the label still reads
-        // 250° after the first wait, the tap was swallowed — re-tap
-        // once and wait again. The assertion is unchanged: the
-        // stepper must show 255°.
+        // Tap the stepper — and verify each tap by its RECEIPT
+        // (#279): this fleet intermittently drops synthetic taps
+        // entirely (run 4: two clean taps on this button, the label
+        // never moved in 45 s; the same dropped-activation signature
+        // starved the fork sheet's target field in flows-a). A
+        // re-tap issued on a fixed schedule can double-step a
+        // slow-but-live tap; a re-tap issued only while the label
+        // still reads 250° cannot overshoot — the value itself
+        // gates every attempt. Bounded at six taps; the assertion
+        // is unchanged: the stepper must show 255°.
         let plus = app.buttons["pit-target-plus"]
-        plus.tap()
-        let stepped = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)
-        if XCTWaiter.wait(for: [stepped], timeout: 15) != .completed {
-            if targetValue.label == "250°" { plus.tap() }
-            let steppedAgain = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)
-            XCTAssertEqual(XCTWaiter.wait(for: [steppedAgain], timeout: 30), .completed, "stepper never showed 255°")
+        var stepped = false
+        for _ in 0..<6 where !stepped {
+            guard targetValue.label == "250°" else { break }
+            plus.tap()
+            let stepWait = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)
+            stepped = XCTWaiter.wait(for: [stepWait], timeout: 6) == .completed
         }
+        XCTAssertTrue(stepped, "stepper never showed 255°")
         XCTAssertTrue(app.buttons["live-conditions-changed"].exists)
 
         // 1.3 + Spread 02: the hero is a door to the full chart; the

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -296,88 +297,89 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
     }
-    // Text entry (#268) — three failure modes, each proven from CI
-    // logs, shaped this helper. Read all three before touching it:
+    // Text entry (#268) — rounds 1–4 of this fix (PR #280) each
+    // failed on the same choke point, and their logs pin down what
+    // this runner fleet does to the fork sheet's fields:
     //
     // 1. `hasFocus` is not a focus oracle here (thorough gate on
-    //    43a1af8, 4/4 attempts; this fix's second PR run, 2/2
-    //    drives): helpers that gate typing on `field.hasFocus`
-    //    starve — the property was never once observed true for the
-    //    fork sheet's fields, across 18 gate-era taps and three
-    //    ~15 s polls per drive in run 2, even though run 1's failure
-    //    snapshot proves the rub field really held keyboard focus
-    //    after a bare tap (flagged "Keyboard Focused", value typed
-    //    and verified). The snapshot annotation and the property
-    //    evidently do not read the same signal in this environment.
-    //    Do not gate on it, in either direction.
-    // 2. Typing races the focus transfer (this fix's first PR run):
-    //    the rub entry landed bare — tap, type ~1 s later, value
-    //    verified — but the target entry typed ~1.2 s after its tap
-    //    while the rub field still held focus, dying with the hard
-    //    error "Neither element nor any descendant has keyboard
-    //    focus"; a hard error ends the test instead of letting the
-    //    caller relaunch and re-drive, so typing must wait out the
-    //    transfer. The transfer to the target also swaps the
-    //    keyboard to the decimal pad — and that swap is observable
-    //    without any focus signal: the pad's digit keys replace the
-    //    letter keys. (Run 3 addendum: the swap must be confirmed
-    //    positive and persistent — mid-transfer, the letter keys
-    //    vanish while no field yet holds focus.)
-    // 3. A raised keyboard swallows taps (same snapshot): with a
-    //    sibling's keyboard up, the target field's frame (y 522–563)
-    //    reaches into the keyboard's band; a tap there lands on the
-    //    keyboard window even though the field reports hittable.
+    //    43a1af8, 4/4 attempts; run 2, 2/2 drives): helpers that gate
+    //    typing on `field.hasFocus` starve — the property never read
+    //    true across 18 gate-era taps and three ~15 s polls per
+    //    drive, even though run 1's failure snapshot proves the rub
+    //    field really held keyboard focus after a bare tap (flagged
+    //    "Keyboard Focused", value typed and verified). The snapshot
+    //    annotation and the property do not read the same signal in
+    //    this environment. Do not gate on it, in either direction.
+    // 2. Unguarded `typeText` is a hard failure the moment focus is
+    //    not yet engaged, and focus TRANSFER between sibling fields
+    //    is the unreliable step: rub entry (tapped from the name
+    //    field) landed 3/3 across runs 1/3/4, but target entry never
+    //    did — run 3 typed into a mid-transfer void (no field held
+    //    focus in the dispatcher's own snapshot), and run 4's taps
+    //    were swallowed outright: ~60 s of polling showed the
+    //    keyboard up the whole time, the decimal pad never
+    //    presented, focus never leaving rub. The same
+    //    dropped-activation signature hit ui-3's stepper in run 4
+    //    (two clean taps, zero effect). Taps on this fleet are
+    //    intermittently eaten — and no wait duration fixes a tap
+    //    that never arrived.
     //
-    // So, per cycle: lift the field clear of any raised keyboard,
-    // tap once (mechanism alternates between cycles, never inside
-    // the wait — a second tap at a stale coordinate can hand focus
-    // back to the field just left), then wait out the transfer —
-    // for a decimal-pad field, poll until the letter keys are gone
-    // (no swap within ~10 s means the tap never took focus: do not
-    // type, take the next cycle); otherwise let a plain settle
-    // elapse (the standard-to-standard transfer took ~1 s in run
-    // 1). Entry REPLACES the field's contents (what `clearingFirst`
-    // always meant, now true for every field, mirroring Android's
-    // replaceText): a pre-filled rub ("Salt and pepper") or target
-    // (162) must not survive as a prefix of the typed value. Prove
-    // the entry by reading the field's value back before returning.
+    // Round 5 changes the MECHANISM, not the timing:
+    // - Focus is requested with a LONG PRESS — a different gesture
+    //   path than a tap, and one a settling scroll view does not
+    //   consume as a scroll-stopper.
+    // - Focus is PROVEN before any text moves: the press raises the
+    //   field's edit menu, which exists only while this field is
+    //   being edited. No menu, no mutation — the cycle retries.
+    // - Text moves through the PASTEBOARD, set from this runner
+    //   process (the simulator shares one pasteboard): Select All
+    //   (when offered) then Paste replaces the field's contents —
+    //   a pre-filled rub ("Salt and pepper") or target (162) must
+    //   not survive as a prefix — and no keystroke depends on
+    //   which keyboard is presented or on `typeText` finding a
+    //   responder.
+    // - Fallback, decimal-pad fields only: if the menu never
+    //   materializes but the pad swap is POSITIVELY and
+    //   PERSISTENTLY shown (keyboard up, a digit key present, the
+    //   letter keys gone, three consecutive polls — the pad's
+    //   shape proves this specific field holds focus, which a
+    //   standard keyboard cannot prove for its own fields), type
+    //   under that proof: the run-1-proven pattern with the
+    //   transfer waited out.
+    // The field's resulting value is the receipt, as before.
     @discardableResult
     private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false, decimalPad: Bool = false) -> Bool {
         guard field.waitForExistence(timeout: 15) else { return false }
         if !field.isHittable { reveal(field, app: app) }
         Thread.sleep(forTimeInterval: 1)
-        for cycle in 0..<3 {
-            // Lift the field clear of a raised keyboard: while any
-            // part of it reaches the keyboard's top edge, taps land
-            // on the keyboard window, not the field. Swipe the sheet
-            // up and re-measure against fresh frames.
-            let keyboard = app.keyboards.firstMatch
-            for _ in 0..<3 where keyboard.exists && field.frame.maxY >= keyboard.frame.minY - 8 {
-                app.swipeUp()
+        for _ in 0..<3 {
+            UIPasteboard.general.string = text
+            field.press(forDuration: 1.2)
+            let paste = app.menuItems["Paste"]
+            let selectAll = app.menuItems["Select All"]
+            var menuUp = false
+            let menuDeadline = Date().addingTimeInterval(12)
+            while Date() < menuDeadline {
+                if paste.exists || selectAll.exists { menuUp = true; break }
                 Thread.sleep(forTimeInterval: 0.5)
             }
-            // One tap per cycle (failure mode 1).
-            if cycle % 2 == 0 || field.frame.width == 0 {
-                field.tap()
-            } else {
-                app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-                    .withOffset(CGVector(dx: field.frame.midX, dy: field.frame.midY)).tap()
-            }
-            // Wait out the focus transfer (failure mode 2).
-            if decimalPad {
-                // The pad swap is the transfer receipt — but demand
-                // it positive and persistent: the pad fully presented
-                // (keyboard up, a digit key present, the letter keys
-                // gone) across three consecutive polls. A single
-                // absent read is mid-transfer noise (run 3: one "a"
-                // check 1.3 s after the tap read gone while the
-                // dispatcher's own snapshot showed NO field holding
-                // focus — the old field had resigned, the new one
-                // had not yet taken over). No sustained swap, no
-                // typing — an unfocused typeText is a hard failure.
+            if menuUp {
+                if selectAll.exists {
+                    // Replace semantics: select the seeded text, then
+                    // paste over the selection; the menu re-presents
+                    // with Paste available.
+                    selectAll.tap()
+                    guard paste.waitForExistence(timeout: 10) else { continue }
+                }
+                UIPasteboard.general.string = text
+                paste.tap()
+            } else if decimalPad {
+                // Fallback under positive, persistent pad proof (see
+                // header): the swap sustained across three polls
+                // means this field — not a sibling — holds focus.
                 var stable = 0
                 var swapped = false
-                for _ in 0..<40 where !swapped {
+                for _ in 0..<24 where !swapped {
                     Thread.sleep(forTimeInterval: 0.5)
                     let padShown = app.keyboards.firstMatch.exists
                         && app.keyboards.keys["1"].exists
@@ -386,15 +388,19 @@ final class MealRecipeFlowsTests: XCTestCase {
                     swapped = stable >= 3
                 }
                 guard swapped else { continue }
+                if let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
+                    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
+                }
+                field.typeText(text)
             } else {
-                Thread.sleep(forTimeInterval: 2.5)
+                continue
             }
-            if let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
-                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
+            // The value is the receipt.
+            let deadline = Date().addingTimeInterval(10)
+            while Date() < deadline {
+                if (field.value as? String) == text { return true }
+                Thread.sleep(forTimeInterval: 0.5)
             }
-            field.typeText(text)
-            Thread.sleep(forTimeInterval: 0.5)
-            if (field.value as? String)?.contains(text) == true { return true }
         }
         return false
     }
