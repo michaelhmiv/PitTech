@@ -24,6 +24,29 @@ final class FlowingLiveUITests: XCTestCase {
         }
     }
 
+    /// DIAGNOSTIC (PR #280, driver-directed diagnostic round — not a
+    /// fix): called ONLY when a wait below expires. Runs 5–7 proved
+    /// the app presents the awaited sheet on screen while the
+    /// runner's accessibility service does not serve it to polls;
+    /// this dumps what the service IS serving at expiry — the full
+    /// app tree, the queried element's own description, and a
+    /// screenshot — as keepAlways attachments, so the retained
+    /// xcresult names the cause. Changes no wait and no assertion.
+    private func attachServedTreeDump(app: XCUIApplication, element: XCUIElement, wait: String) {
+        let tree = XCTAttachment(string: "DIAG280 served tree — wait: \(wait)\n" + app.debugDescription)
+        tree.name = "DIAG280 served tree — \(wait)"
+        tree.lifetime = .keepAlways
+        add(tree)
+        let elementDump = XCTAttachment(string: "DIAG280 queried element — wait: \(wait)\n" + element.debugDescription)
+        elementDump.name = "DIAG280 queried element — \(wait)"
+        elementDump.lifetime = .keepAlways
+        add(elementDump)
+        let screen = XCTAttachment(screenshot: app.screenshot())
+        screen.name = "DIAG280 screen — \(wait)"
+        screen.lifetime = .keepAlways
+        add(screen)
+    }
+
     func testBrandStripOnEveryTabAndFabOpensStartSheet() {
         let app = launchFlowing()
         for tab in ["Meals", "Recipes", "Discover", "Insights", "More"] {
@@ -142,7 +165,14 @@ final class FlowingLiveUITests: XCTestCase {
         while !closeButton.isHittable && Date() < settleDeadline {
             Thread.sleep(forTimeInterval: 2)
         }
-        XCTAssertTrue(closeButton.isHittable)
+        let closeHittable = closeButton.isHittable
+        if !closeHittable {
+            // DIAGNOSTIC (PR #280): the settle wait expired — dump
+            // the served tree before asserting (see
+            // attachServedTreeDump).
+            attachServedTreeDump(app: app, element: closeButton, wait: "live-chart-close 120s settle")
+        }
+        XCTAssertTrue(closeHittable)
         // Query the readout by its real element type (round 6, from
         // run 5's retained screen recording): the recording's final
         // frame shows the chart COMPLETE on screen — readout card
