@@ -57,6 +57,13 @@ struct PlanDayBoardView: View {
                 conflictStrip
             }
         }
+        // Contain: this container's identifier must not swallow its
+        // children's own identifiers — SwiftUI propagates a plain
+        // container identifier to every descendant accessibility
+        // element, which erased the headline's "plan-board-headline"
+        // from the tree entirely (#268; the readout card in
+        // LiveChartView carries the same fix for its ghost-delta).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plan-board")
     }
 

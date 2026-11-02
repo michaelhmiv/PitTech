@@ -97,6 +97,14 @@ struct LiveChartView: View {
         let spans = CookPaceEngine.stallSpans(probe)
         let inStall = spans.contains { cursor * 60_000 >= Double($0.startUtcMillis) && cursor * 60_000 <= Double($0.endUtcMillis) }
         let ghostDelta = ghost.map { LiveGuidance.ghostDeltaMinutes(current: probe, ghost: $0.series, cursorElapsedMinutes: cursor) } ?? nil
+        // The chart canvas speaks to assistive tools as this one
+        // summary (see the collapse at the chart below, #279).
+        let chartSummary = [
+            "Temperature chart",
+            probeAt.map { "probe \(Int(display($0).rounded()))°" },
+            pitAt.map { "pit \(Int(display($0).rounded()))°" },
+            elapsedLabel(cursor),
+        ].compactMap { $0 }.joined(separator: ", ")
         let stripEvents: [(label: String, atMinutes: Double)] = {
             var items: [(String, Double)] = store.library.actions(for: cookId)
                 .filter { (leadDishId == nil || $0.dishIds.isEmpty || $0.dishIds.contains(leadDishId!)) && ["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start"].contains($0.action) }
@@ -175,6 +183,21 @@ struct LiveChartView: View {
                             presetSpanMinutes: presetSpan,
                             presetStartMinutes: presetStart,
                             presetFollowLatest: presetFollow)
+                        // Collapse (#279): the chart engine's full
+                        // accessibility subtree — every mark, tick and
+                        // axis element — made single snapshot
+                        // evaluations on this sheet take 30–105 s and
+                        // hard-error ("Timed out while evaluating UI
+                        // query"), starving the sheet's own chrome.
+                        // The canvas now serves as one summarized
+                        // element; the readout, presets, event strip
+                        // and Done stay exposed as themselves, and the
+                        // pinned readout above carries the same
+                        // numbers the summary speaks. (The Charts tab
+                        // keeps the engine's full tree — this is
+                        // sheet-local.)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(chartSummary)
                     } else {
                         TurnInCard {
                             Text("Loading the full chart…")
