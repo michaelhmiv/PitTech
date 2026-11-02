@@ -502,7 +502,21 @@ final class MealRecipeFlowsTests: XCTestCase {
         // day board leads with a start time.
         let planThis = app.buttons["public-plan-this"]; reveal(planThis, app: app); planThis.tap()
         let headline = app.staticTexts["plan-board-headline"]
-        guard headline.waitForExistence(timeout: 20) else { return bail() }
+        // Poll for the headline on a runner-scale budget (round 7):
+        // Plan this fires an async Task (fork-as-written if needed,
+        // build the plan, present the planner), and in run 6 both
+        // drives expired at exactly this wait's 20 s while the
+        // retained recording shows the presented sheet fully
+        // rendered — "Food on 9:20 AM" headline, the fork's name
+        // carried in — once the Task landed. The destination is
+        // right; the fuse was shorter than the leg on a loaded
+        // runner. Poll instead of one fixed wait; the guard and
+        // the label assertion below are unchanged.
+        let headlineDeadline = Date().addingTimeInterval(150)
+        while !headline.exists && Date() < headlineDeadline {
+            Thread.sleep(forTimeInterval: 2)
+        }
+        guard headline.exists else { return bail() }
         guard headline.label.contains(":") else { return bail() }
         let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "recorded cook")).firstMatch
         for _ in 0..<6 where !note.exists { app.swipeUp() }

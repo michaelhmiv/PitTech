@@ -70,6 +70,26 @@ final class FlowingLiveUITests: XCTestCase {
         let targetValue = app.staticTexts["pit-target-value"]
         reveal(targetValue, app: app)
         XCTAssertEqual(targetValue.label, "250°")
+        // Position the stepper VERIFIABLY on screen before tapping
+        // (round 7, from run 6's retained recording): reveal()
+        // stopped after ONE swipe — which carried the button past
+        // the top of the viewport (it sits less than a swipe below
+        // the fold) — because its exit condition trusts hittability,
+        // and this fleet misreports hittability for off-screen
+        // elements (the fork sheet's keyboard-buried field read
+        // hittable too, run 5). All six receipt taps then
+        // synthesized at the button's off-screen frame. Servo on
+        // the FRAME instead — the signal that has been reliable in
+        // every round: swipe toward the button until its center
+        // sits inside the window, clear of the nav and tab bars.
+        let plus = app.buttons["pit-target-plus"]
+        let windowFrame = app.windows.firstMatch.frame
+        for _ in 0..<8 {
+            let midY = plus.frame.midY
+            if midY > windowFrame.minY + 120 && midY < windowFrame.maxY - 100 { break }
+            if midY <= windowFrame.minY + 120 { app.swipeDown() } else { app.swipeUp() }
+            Thread.sleep(forTimeInterval: 0.6)
+        }
         // Tap the stepper — and verify each tap by its RECEIPT
         // (#279): this fleet intermittently drops synthetic taps
         // entirely (run 4: two clean taps on this button, the label
@@ -80,7 +100,6 @@ final class FlowingLiveUITests: XCTestCase {
         // still reads 250° cannot overshoot — the value itself
         // gates every attempt. Bounded at six taps; the assertion
         // is unchanged: the stepper must show 255°.
-        let plus = app.buttons["pit-target-plus"]
         var stepped = false
         for _ in 0..<6 where !stepped {
             guard targetValue.label == "250°" else { break }
