@@ -24,6 +24,77 @@ final class FlowingLiveUITests: XCTestCase {
         }
     }
 
+    /// Settled-position tap for BOARD (scroll-view) elements — the
+    /// gate the stepper servo proved (#279 follow-up) and the hero
+    /// door now gets as well (third mechanism, below). reveal()'s
+    /// exit condition trusts existence + hittability, and this fleet
+    /// misreports both for elements whose scroll is still in motion:
+    /// a tap synthesized from a transient frame lands wherever that
+    /// frame pointed, not where the settled element sits. Servo on
+    /// the FRAME instead: swipe toward the element until its center
+    /// sits in the same in-window band the stepper uses, and tap
+    /// only when the SAME frame (midX and midY) reads twice, a beat
+    /// apart — two identical frames spanning a beat cannot be a
+    /// scroll still bouncing, so the tap goes to the position the
+    /// settled view actually holds. Returns false when the element
+    /// never settles into the band; the caller fails, naming it.
+    @discardableResult
+    private func tapBoardElementWhenSettled(_ element: XCUIElement, app: XCUIApplication) -> Bool {
+        let windowFrame = app.windows.firstMatch.frame
+        var settledMidY: CGFloat?
+        var settledMidX: CGFloat?
+        for _ in 0..<12 {
+            guard element.exists, element.frame.width > 0 else {
+                settledMidY = nil
+                settledMidX = nil
+                app.scrollViews.firstMatch.swipeUp()
+                Thread.sleep(forTimeInterval: 0.6)
+                continue
+            }
+            let frame = element.frame
+            if frame.midY > windowFrame.minY + 120 && frame.midY < windowFrame.maxY - 100 {
+                if let settledMidY, let settledMidX,
+                   abs(frame.midY - settledMidY) < 1, abs(frame.midX - settledMidX) < 1 {
+                    element.tap()
+                    return true
+                }
+                settledMidY = frame.midY
+                settledMidX = frame.midX
+                Thread.sleep(forTimeInterval: 1)
+                continue
+            }
+            settledMidY = nil
+            settledMidX = nil
+            if frame.midY <= windowFrame.minY + 120 { app.scrollViews.firstMatch.swipeDown() } else { app.scrollViews.firstMatch.swipeUp() }
+            Thread.sleep(forTimeInterval: 0.6)
+        }
+        return false
+    }
+
+    /// Settled-position tap for SHEET chrome (chart presets, the
+    /// chart's Done/close): no scrolling is involved, but the tap
+    /// still follows the sheet's presentation and render churn, so
+    /// the same two-agreeing-samples rule applies before tapping —
+    /// sample the frame twice, a beat apart, and tap only when both
+    /// samples agree. Returns false when the frame never settles.
+    @discardableResult
+    private func tapSheetElementWhenSettled(_ element: XCUIElement) -> Bool {
+        var settledMidY: CGFloat?
+        var settledMidX: CGFloat?
+        for _ in 0..<8 {
+            let frame = element.frame
+            if frame.width > 0, let settledMidY, let settledMidX,
+               abs(frame.midY - settledMidY) < 1, abs(frame.midX - settledMidX) < 1 {
+                element.tap()
+                return true
+            }
+            settledMidY = frame.width > 0 ? frame.midY : nil
+            settledMidX = frame.width > 0 ? frame.midX : nil
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return false
+    }
+
     func testBrandStripOnEveryTabAndFabOpensStartSheet() {
         let app = launchFlowing()
         for tab in ["Meals", "Recipes", "Discover", "Insights", "More"] {
@@ -145,9 +216,73 @@ final class FlowingLiveUITests: XCTestCase {
         // 1.3 + Spread 02: the hero is a door to the full chart; the
         // ghost delta speaks at the cursor.
         let hero = app.buttons["live-chart-hero"]
-        reveal(hero, app: app)
-        XCTAssertTrue(hero.waitForExistence(timeout: 10))
-        hero.tap()
+        // THIRD MECHANISM — the hero door has the stepper's disease
+        // (#279 follow-up, run 41468955142 attempt 2, fast board;
+        // retained 385 s recording): the hero was tapped through the
+        // bare reveal() idiom — existence/hittability only, no
+        // settled-position verification — immediately after the
+        // scroll + stepper-write churn, and its snapshot frame did
+        // not match the settled layout: the tap synthesized at
+        // t≈21.3 s landed on the board's Reminders action (the fixed
+        // bottom shortcut bar the stale frame extended into), a
+        // Reminders page slid in at t≈22 s, and the test then spent
+        // 60 s + 300 s polling for a chart close button on a surface
+        // that has none. Same stale-geometry family as the stepper,
+        // one door later. The door gets the stepper's treatment:
+        // (1) a settled-position gate before the tap — the hero's
+        // frame must read identically twice, a beat apart, inside
+        // the tappable band (tapBoardElementWhenSettled); (2) a
+        // PRESENTATION RECEIPT after it — the chart-sheet-only
+        // close button must exist before the settle loop below is
+        // entered. The receipt poll checks the close button first
+        // (on the chart its evaluation may be slow, but it is the
+        // signal that resolves the door), then the wrong-surface
+        // markers that exist ONLY on the Reminders surface (its
+        // navigation bar, its composer button — both cheap on that
+        // light surface). A receipt that positively shows the wrong
+        // surface recovers ONCE: navigate back and re-drive the
+        // door through the same gate. A second wrong-surface
+        // receipt fails here, naming the surface, instead of
+        // burning the settle budget on it. A receipt that confirms
+        // NEITHER surface is not a failure — on a degraded runner
+        // the chart's first render can saturate the tree past the
+        // receipt window — so the test falls through to the
+        // query-free wait and the settle assert below, which remain
+        // the authority exactly as before. No assertion changes.
+        let closeButton = app.buttons["live-chart-close"]
+        var chartConfirmed = false
+        var landedSurface: String?
+        var drivesLeft = 2
+        while drivesLeft > 0 && !chartConfirmed {
+            drivesLeft -= 1
+            XCTAssertTrue(tapBoardElementWhenSettled(hero, app: app), "hero door never settled into the tappable band")
+            var onReminders = false
+            let receiptDeadline = Date().addingTimeInterval(90)
+            while Date() < receiptDeadline && !chartConfirmed && !onReminders {
+                if closeButton.exists { chartConfirmed = true; break }
+                if app.navigationBars["Reminders"].exists || app.buttons["Set a cook reminder"].exists { onReminders = true; break }
+                Thread.sleep(forTimeInterval: 1)
+            }
+            if onReminders {
+                landedSurface = "Reminders"
+                if drivesLeft > 0 {
+                    // Recover once: pop the wrong surface and let the
+                    // loop re-drive the door through the settle gate.
+                    let back = app.navigationBars["Reminders"].buttons.firstMatch
+                    if back.exists { back.tap() }
+                    _ = hero.waitForExistence(timeout: 10)
+                }
+            } else if !chartConfirmed {
+                // Unconfirmed receipt: no wrong surface seen. Do NOT
+                // re-drive — while the sheet may still be presenting
+                // there is no safe target for a second tap. The
+                // query-free wait + settle assert below decide.
+                break
+            }
+        }
+        if let landedSurface, !chartConfirmed {
+            XCTFail("hero tap landed on the \(landedSurface) surface on both drives; the chart sheet never presented")
+        }
         // The readout identifier sits on the readout CARD (a .contain
         // container), not a Text — it is queried as otherElements
         // below (round 6: the type-agnostic query it replaces never
@@ -169,7 +304,6 @@ final class FlowingLiveUITests: XCTestCase {
         // the test's own settle check and content asserts against a
         // calm tree, as in the runs that pass.
         Thread.sleep(forTimeInterval: 60)
-        let closeButton = app.buttons["live-chart-close"]
         // Budget sized to the measured per-poll service cost (#279
         // follow-up, run 41432357674 attempts 1–2): with the chart
         // AX-subtree collapse in place every evaluation on this sheet
@@ -216,15 +350,26 @@ final class FlowingLiveUITests: XCTestCase {
         // The delta speaks in the spec's own words (§2.4), identical on
         // both platforms; the fixture's geometry makes it exactly +38.
         XCTAssertTrue(delta.label.contains("+38 min vs last brisket at this point"), delta.label)
-        app.buttons["live-chart-preset-last2h"].tap()
+        // Audit gate (same pass as the hero door): these two taps sit
+        // on the chart sheet and follow its presentation/render churn
+        // — the preset tap re-renders the chart, and the close tap
+        // follows that re-render — so both take the settled-position
+        // gate before tapping. Their receipts already exist and are
+        // unchanged: the readout must still exist after the preset,
+        // and the overnight leg below can only proceed once the
+        // sheet has actually dismissed back to the board.
+        XCTAssertTrue(tapSheetElementWhenSettled(app.buttons["live-chart-preset-last2h"]), "chart preset never settled before tapping")
         XCTAssertTrue(readout.exists)
-        app.buttons["live-chart-close"].tap()
+        XCTAssertTrue(tapSheetElementWhenSettled(closeButton), "chart close never settled before tapping")
 
         // E3: the overnight panel assembles the net; the test alert posts.
+        // Audit gate: this tap used the same bare reveal() idiom as
+        // the hero door, on board scroll-view content, immediately
+        // after the chart sheet's dismissal churn — it takes the
+        // settled-position gate too. Its receipt is the existing
+        // assert below: the sent confirmation must appear.
         let testAlert = app.buttons["overnight-test-alert"]
-        reveal(testAlert, app: app)
-        XCTAssertTrue(testAlert.waitForExistence(timeout: 10))
-        testAlert.tap()
+        XCTAssertTrue(tapBoardElementWhenSettled(testAlert, app: app), "overnight test alert button never settled into the tappable band")
         XCTAssertTrue(app.staticTexts["overnight-test-sent"].waitForExistence(timeout: 10))
     }
 
