@@ -396,7 +396,13 @@ final class FlowingLiveUITests: XCTestCase {
         var closeHittable = false
         while !closeHittable && Date() < settleDeadline {
             closeHittable = closeButton.isHittable
-            if !closeHittable { Thread.sleep(forTimeInterval: 2) }
+            // Round 10: poll at 10 s, not 2 s. Each isHittable is a
+            // full snapshot evaluation on this sheet (~28–61 s on
+            // this runner class — see the round-10 note at the
+            // readout below), so the sleep never gates the cadence;
+            // it only spaces the polls. Fewer issued evaluations =
+            // fewer chances for one to hard-error.
+            if !closeHittable { Thread.sleep(forTimeInterval: 10) }
         }
         XCTAssertTrue(closeHittable)
         // Query the readout by its real element type (round 6, from
@@ -414,20 +420,39 @@ final class FlowingLiveUITests: XCTestCase {
         // suite queries as otherElements — so query it that way,
         // and poll at a lazy interval so evaluations never stack.
         let readout = app.otherElements["live-chart-readout"]
-        let readoutDeadline = Date().addingTimeInterval(240)
-        while !readout.exists && Date() < readoutDeadline {
-            Thread.sleep(forTimeInterval: 5)
-        }
-        XCTAssertTrue(readout.exists, "live-chart-readout never appeared")
         let delta = app.staticTexts["live-chart-ghost-delta"]
-        let deltaDeadline = Date().addingTimeInterval(120)
-        while !delta.exists && Date() < deltaDeadline {
-            Thread.sleep(forTimeInterval: 5)
+        // Round 10 (run 41543539394 attempts 2–3, head 96d491f):
+        // poll the delta ALONE, then verify the readout with a
+        // single evaluation. On this runner class every evaluation
+        // on this sheet costs ~28–61 s, and any single one can
+        // exceed XCTest's internal snapshot timeout and hard-error
+        // the test ("Failed to get matching snapshots: Timed out
+        // while evaluating UI query") — attempt 2 died inside the
+        // readout poll after four evaluations, attempt 3 cleared
+        // the readout and died inside the delta poll after four
+        // more. Two sequential multi-evaluation polls double the
+        // exposure, and no budget survives a hard error. The delta
+        // renders INSIDE the readout card, so a single combined
+        // poll on the delta (budget = the previous 240 s + 120 s)
+        // followed by one readout evaluation verifies both
+        // elements with a fraction of the evaluations. The assert
+        // judges the value the loop observed (round 9's discipline:
+        // a post-loop re-read is another ~31 s evaluation that can
+        // time out and contradict a satisfied condition). Every
+        // element is still asserted present; nothing is skipped.
+        var deltaSeen = false
+        let deltaDeadline = Date().addingTimeInterval(360)
+        while !deltaSeen && Date() < deltaDeadline {
+            deltaSeen = delta.exists
+            if !deltaSeen { Thread.sleep(forTimeInterval: 5) }
         }
-        XCTAssertTrue(delta.exists, "live-chart-ghost-delta never appeared")
+        XCTAssertTrue(deltaSeen, "live-chart-ghost-delta never appeared")
+        XCTAssertTrue(readout.exists, "live-chart-readout never appeared")
         // The delta speaks in the spec's own words (§2.4), identical on
         // both platforms; the fixture's geometry makes it exactly +38.
-        XCTAssertTrue(delta.label.contains("+38 min vs last brisket at this point"), delta.label)
+        // Judge the label value from ONE evaluation, not two reads.
+        let deltaLabel = delta.label
+        XCTAssertTrue(deltaLabel.contains("+38 min vs last brisket at this point"), deltaLabel)
         // Audit gate (same pass as the hero door): these two taps sit
         // on the chart sheet and follow its presentation/render churn
         // — the preset tap re-renders the chart, and the close tap
