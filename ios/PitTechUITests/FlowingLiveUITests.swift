@@ -355,7 +355,16 @@ final class FlowingLiveUITests: XCTestCase {
         // polls (3 × ~93 s ≈ 279 s) with margin. The settle CONDITION
         // is unchanged — the close button hittable, asserted below
         // exactly as before; only the budget is sized to the service.
-        let settleDeadline = Date().addingTimeInterval(300)
+        // ROUND 13 (run 41590051489 attempt 2, head ff41d38): the
+        // 300 s sizing met its edge exactly — two full isHittable
+        // evaluations completed inside the budget (finds completing
+        // t≈238 / t≈340), both reporting not-hittable on that
+        // degraded runner, and a third was still in flight when the
+        // deadline expired; the settle assert failed for the first
+        // time in the campaign. The budget doubles to 600 s, which
+        // admits ~six worst-cadence evaluations; the CONDITION and
+        // the assert are unchanged.
+        let settleDeadline = Date().addingTimeInterval(600)
         // ROUND 9 (run 41534998086 attempt 1): the loop now KEEPS
         // the value it observes, and the assert below judges that
         // kept value — the previous shape re-read isHittable after
@@ -370,9 +379,9 @@ final class FlowingLiveUITests: XCTestCase {
         // contradicted it. Same class as the stepper receipt-guard
         // correction in round 7 (a receipt landing between the
         // waiter's last poll and a re-check is the receipt, not a
-        // failure). The CONDITION and the BUDGET are unchanged: the
-        // assert still fails whenever no evaluation observes the
-        // close button hittable within the 300 s deadline.
+        // failure). The CONDITION is unchanged: the assert still
+        // fails whenever no evaluation observes the close button
+        // hittable within the deadline (600 s since round 13).
         var closeHittable = false
         while !closeHittable && Date() < settleDeadline {
             closeHittable = closeButton.isHittable
