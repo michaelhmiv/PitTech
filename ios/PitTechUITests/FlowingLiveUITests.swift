@@ -103,29 +103,9 @@ final class FlowingLiveUITests: XCTestCase {
         return false
     }
 
-    /// Settled-position tap for SHEET chrome (chart presets, the
-    /// chart's Done/close): no scrolling is involved, but the tap
-    /// still follows the sheet's presentation and render churn, so
-    /// the same two-agreeing-samples rule applies before tapping —
-    /// sample the frame twice, a beat apart, and tap only when both
-    /// samples agree. Returns false when the frame never settles.
-    @discardableResult
-    private func tapSheetElementWhenSettled(_ element: XCUIElement) -> Bool {
-        var settledMidY: CGFloat?
-        var settledMidX: CGFloat?
-        for _ in 0..<8 {
-            let frame = element.frame
-            if frame.width > 0, let settledMidY, let settledMidX,
-               abs(frame.midY - settledMidY) < 1, abs(frame.midX - settledMidX) < 1 {
-                element.tap()
-                return true
-            }
-            settledMidY = frame.width > 0 ? frame.midY : nil
-            settledMidX = frame.width > 0 ? frame.midX : nil
-            Thread.sleep(forTimeInterval: 1)
-        }
-        return false
-    }
+    // (A settled-position servo for SHEET chrome lived here until
+    // round 11; the chart sheet's taps no longer use it — see the
+    // round-11 note at the preset/close taps for the evidence.)
 
     func testBrandStripOnEveryTabAndFabOpensStartSheet() {
         let app = launchFlowing()
@@ -421,30 +401,33 @@ final class FlowingLiveUITests: XCTestCase {
         // and poll at a lazy interval so evaluations never stack.
         let readout = app.otherElements["live-chart-readout"]
         let delta = app.staticTexts["live-chart-ghost-delta"]
-        // Round 10 (run 41543539394 attempts 2–3, head 96d491f):
-        // poll the delta ALONE, then verify the readout with a
-        // single evaluation. On this runner class every evaluation
-        // on this sheet costs ~28–61 s, and any single one can
-        // exceed XCTest's internal snapshot timeout and hard-error
-        // the test ("Failed to get matching snapshots: Timed out
-        // while evaluating UI query") — attempt 2 died inside the
-        // readout poll after four evaluations, attempt 3 cleared
-        // the readout and died inside the delta poll after four
-        // more. Two sequential multi-evaluation polls double the
-        // exposure, and no budget survives a hard error. The delta
-        // renders INSIDE the readout card, so a single combined
-        // poll on the delta (budget = the previous 240 s + 120 s)
-        // followed by one readout evaluation verifies both
-        // elements with a fraction of the evaluations. The assert
-        // judges the value the loop observed (round 9's discipline:
-        // a post-loop re-read is another ~31 s evaluation that can
-        // time out and contradict a satisfied condition). Every
-        // element is still asserted present; nothing is skipped.
-        var deltaSeen = false
-        let deltaDeadline = Date().addingTimeInterval(360)
-        while !deltaSeen && Date() < deltaDeadline {
+        // Round 10 (run 41543539394 attempts 2–3, head 96d491f)
+        // merged the readout/delta polls into one delta poll; round
+        // 11 (run 41574633034 attempt 1, head 7f0183a) removes the
+        // poll loop itself: the test died at this file's delta
+        // `.exists` line on the FIRST poll cycle — stepper, hero
+        // receipt and the settle assert all passed, then the first
+        // delta evaluation's third internal retry hard-errored with
+        // the same snapshot-timeout signature. Polling cannot beat
+        // a hard error — every poll is a fresh ticket — and the
+        // round-9 attempt-3 record shows repeated reads do not fix
+        // the other failure mode either (four completed evaluations
+        // returned false for a card the same run had already
+        // observed present). So the delta gets AT MOST TWO kept-
+        // value evaluations: one now that the settle gate has
+        // proven the sheet calm (by this point the sheet has been
+        // up for minutes of wall time on a degraded runner — the
+        // render itself is never the slow part; the reads are),
+        // and, only if that read says absent, ONE more after a
+        // 120 s QUERY-FREE interval that covers a genuinely late
+        // render without issuing a single extra snapshot. The
+        // assert judges the kept value; the readout keeps round
+        // 10's single evaluation. Every element is still asserted
+        // present; nothing is skipped.
+        var deltaSeen = delta.exists
+        if !deltaSeen {
+            Thread.sleep(forTimeInterval: 120)
             deltaSeen = delta.exists
-            if !deltaSeen { Thread.sleep(forTimeInterval: 5) }
         }
         XCTAssertTrue(deltaSeen, "live-chart-ghost-delta never appeared")
         XCTAssertTrue(readout.exists, "live-chart-readout never appeared")
@@ -453,17 +436,25 @@ final class FlowingLiveUITests: XCTestCase {
         // Judge the label value from ONE evaluation, not two reads.
         let deltaLabel = delta.label
         XCTAssertTrue(deltaLabel.contains("+38 min vs last brisket at this point"), deltaLabel)
-        // Audit gate (same pass as the hero door): these two taps sit
-        // on the chart sheet and follow its presentation/render churn
-        // — the preset tap re-renders the chart, and the close tap
-        // follows that re-render — so both take the settled-position
-        // gate before tapping. Their receipts already exist and are
-        // unchanged: the readout must still exist after the preset,
-        // and the overnight leg below can only proceed once the
-        // sheet has actually dismissed back to the board.
-        XCTAssertTrue(tapSheetElementWhenSettled(app.buttons["live-chart-preset-last2h"]), "chart preset never settled before tapping")
+        // These two taps sit on the chart sheet. They previously
+        // took the settled-position servo gate — up to eight frame
+        // evaluations per tap — but round 9's attempt 1 died INSIDE
+        // that servo's frame sampling for the preset, and the
+        // servo's precondition is already proven here by stronger
+        // evidence: the settle gate above observed the close
+        // button hittable on this sheet, and the content reads
+        // just confirmed the readout card and its delta rendered.
+        // The sheet's buttons are not scroll content — their
+        // frames do not move once the sheet has presented — so a
+        // direct tap (whose own machinery waits for hittability)
+        // carries the same guarantee with a fraction of the
+        // snapshot exposure. Their receipts are unchanged: the
+        // readout must still exist after the preset, and the
+        // overnight leg below can only proceed once the sheet has
+        // actually dismissed back to the board.
+        app.buttons["live-chart-preset-last2h"].tap()
         XCTAssertTrue(readout.exists)
-        XCTAssertTrue(tapSheetElementWhenSettled(closeButton), "chart close never settled before tapping")
+        closeButton.tap()
 
         // E3: the overnight panel assembles the net; the test alert posts.
         // Audit gate: this tap used the same bare reveal() idiom as
