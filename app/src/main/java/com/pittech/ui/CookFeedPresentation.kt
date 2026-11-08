@@ -18,8 +18,23 @@ internal fun foodChoices(dishes: List<DishEntity>): List<Pair<String, String>> =
 
 /** Content filters describe the contents of a combined note, rather than splitting it. */
 internal object CookFeedPresentation {
+    /**
+     * Sources whose events are the user's own log content: typed in the app
+     * ("manual") or written through the user's own MCP connection ("mcp",
+     * stamped by the API's create_note). Both belong in the Cook story and
+     * the Notes filter; device/system sources (controller_cloud, telemetry:*)
+     * do not.
+     */
+    private val userSources = setOf("manual", "mcp")
+    /** Labels for the note actions that are not playbook steps — the note
+     * composer's own action vocabulary (CookNoteComposer). PlaybookCodec.actions
+     * has no labels for these, so an entry recorded with one would otherwise
+     * present under the generic "Cook note" title it was stored with. */
+    private val preparationActionLabels = mapOf(
+        "preheat_start" to "Preheat", "season" to "Season", "trim" to "Trim",
+        "marinate" to "Marinate", "add_fuel" to "Add fuel")
     fun isSetpoint(event: TimelineEventEntity) = event.eventType in setOf("setpoint_changed", "setpoint_recorded")
-    fun isStory(event: TimelineEventEntity) = event.source == "manual" || isSetpoint(event) || event.eventType == "probe_assigned"
+    fun isStory(event: TimelineEventEntity) = event.source in userSources || isSetpoint(event) || event.eventType == "probe_assigned"
     fun matchesFood(event: TimelineEventEntity, foodId: String?): Boolean {
         if (event.eventType.startsWith("telemetry_")) return false
         if (foodId == null) return true
@@ -30,8 +45,10 @@ internal object CookFeedPresentation {
     fun matches(event: TimelineEventEntity, filter: TimelineFilter, hasPhotos: Boolean, hasReadings: Boolean): Boolean =
         when (filter) {
             TimelineFilter.STORY -> isStory(event)
-            TimelineFilter.NOTES -> event.source == "manual" && (event.eventType == "note" || !event.details.isNullOrBlank())
-            TimelineFilter.EVENTS -> event.eventType in setOf("cook_started", "cook_finished", "reminder_completed", "probe_assigned") ||
+            TimelineFilter.NOTES -> event.source in userSources && (event.eventType == "note" || event.eventType == "photo" ||
+                !event.details.isNullOrBlank() ||
+                PlaybookCodec.action(event.eventType, event.noteMetadataJson) in CookNoteMetadata.actions)
+            TimelineFilter.EVENTS -> event.eventType in setOf("cook_started", "cook_paused", "cook_resumed", "cook_finished", "cook_reopened", "reminder_completed", "probe_assigned") ||
                 PlaybookCodec.action(event.eventType, event.noteMetadataJson) in CookNoteMetadata.actions
             TimelineFilter.PHOTOS -> hasPhotos || event.eventType == "photo"
             TimelineFilter.TEMPERATURES -> hasReadings
@@ -48,7 +65,7 @@ internal object CookFeedPresentation {
     fun title(event: TimelineEventEntity): String {
         if (isSetpoint(event)) return event.title.replace("Grill setpoint changed to", "Grill set to")
         val action = PlaybookCodec.action(event.eventType, event.noteMetadataJson)
-        val actionTitle = PlaybookCodec.actions[action]
+        val actionTitle = PlaybookCodec.actions[action] ?: preparationActionLabels[action]
         return when {
             actionTitle != null && (event.title.isBlank() || event.title in setOf("Cook note", "Note") || event.title == actionTitle) -> actionTitle
             event.title in setOf("Cook note", "Note", "Photo added") && !event.details.isNullOrBlank() ->
