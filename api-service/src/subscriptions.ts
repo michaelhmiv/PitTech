@@ -130,6 +130,21 @@ export function projectCache(record: EntitlementRecord | undefined, environment:
   };
 }
 
+/** The private-beta grant (see beta-entitlement.ts): a fully entitled cache
+ * record minted from the deployment flag, never from a store. It carries the
+ * verified shape the native entitlement caches and the community Pro gate
+ * require, with no paid-through date (verifiedUntil null) and the standard
+ * offline window from the moment it is served. It is a read projection only;
+ * no entitlement record is ever written from it. */
+export function betaEntitlementRecord(environment: StoreEnvironment, now: number): EntitlementCacheRecord {
+  return {
+    version: ENTITLEMENT_CACHE_VERSION, environment, verified: true, state: 'active',
+    verifiedUntil: null, lastVerifiedAt: new Date(now).toISOString(),
+    offlineValidUntil: new Date(now + OFFLINE_WINDOW_MS).toISOString(),
+    contractVersion: STORE_VERIFICATION_VERSION,
+  };
+}
+
 export type StoredTransaction = {
   store: StoreName; environment: StoreEnvironment; transactionKey: string; latestTransaction: string;
   accountId: string; productId: string; purchasedAt: number; expiresAt: number | null; autoRenew: boolean | null;
@@ -244,7 +259,10 @@ const recoveryText = 'This store purchase is already bound to a different PitTec
 
 export class Subscriptions {
   private store: BillingStore; private deps: SubscriptionDeps; clock: () => number;
-  constructor(store: BillingStore, deps: SubscriptionDeps, clock = Date.now) { this.store = store; this.deps = deps; this.clock = clock; }
+  private betaAllAccess: boolean;
+  constructor(store: BillingStore, deps: SubscriptionDeps, clock = Date.now, options: { betaAllAccess?: boolean } = {}) {
+    this.store = store; this.deps = deps; this.clock = clock; this.betaAllAccess = options.betaAllAccess === true;
+  }
   private async applyVerdict(accountId: string, environment: StoreEnvironment, store: StoreName, verdict: StoreVerdict, reason: string): Promise<{ cache: EntitlementCacheRecord; applied: boolean; note: string }> {
     const now = this.clock(), current = await this.store.entitlement(accountId, environment);
     const outcome = transitionEntitlement(current, verdict, { accountId, environment, store }, now);
@@ -376,6 +394,10 @@ export class Subscriptions {
   }
   async cache(accountId: string, environment: StoreEnvironment): Promise<EntitlementCacheRecord> {
     if (!uuid(accountId)) throw new ApiError(401, 'authentication_required');
+    // Private-beta all-access: every account reads as entitled, whatever the
+    // store holds. Every entitlement consumer (the native entitlement route,
+    // the community Pro gate, the MCP lookup) reads through here.
+    if (this.betaAllAccess) return betaEntitlementRecord(environment, this.clock());
     return projectCache(await this.store.entitlement(accountId, environment), environment, this.clock());
   }
   private async reconcileApple(holder: StoredTransaction, hint: { notificationType: string; eventAt: number; transactionId: string }): Promise<{ applied: boolean; note: string }> {
@@ -453,6 +475,9 @@ export class Subscriptions {
    * store with a recorded reconciliation event. */
   async reconcileAccount(accountId: string, environment: StoreEnvironment): Promise<EntitlementCacheRecord> {
     if (!uuid(accountId)) throw new ApiError(401, 'authentication_required');
+    // Private-beta all-access: the reconcile the apps run at launch answers
+    // with the beta grant and leaves store state untouched.
+    if (this.betaAllAccess) return betaEntitlementRecord(environment, this.clock());
     const record = await this.store.entitlement(accountId, environment);
     if (!record || !record.transactionStore || !record.transactionKey) return projectCache(record, environment, this.clock());
     const holder = await this.store.transaction(record.transactionStore, environment, record.transactionKey);

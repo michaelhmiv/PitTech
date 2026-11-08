@@ -23,6 +23,7 @@ import { privateLibraryEnvelope } from './sync-projection.ts';
 import { CommunityAggregates, PostgresCommunityStore } from './community-aggregation.ts';
 import { McpGrants, PostgresMcpGrantStore, PostgresMcpOperationJournal, SubscriptionsEntitlementLookup, type McpEntitlementLookup } from './mcp-grants.ts';
 import { parseMcpTestProEmails, TestProEntitlementLookup } from './mcp-test-entitlement.ts';
+import { parseBetaAllAccess } from './beta-entitlement.ts';
 import { PostgresMcpPortabilityStore } from './mcp-portability.ts';
 import { PostgresMcpDeviceStore } from './mcp-device.ts';
 import { McpOAuth, PostgresMcpOAuthStore, type McpOAuthClient } from './mcp-oauth.ts';
@@ -127,6 +128,12 @@ export function createRuntime() {
   // paywall inventory land; enabling requires a verified account backend.
   const billingEnabled=process.env.SUBSCRIPTIONS_ENABLED==='true';
   if(billingEnabled&&!authSecrets)throw new Error('Accounts required');
+  // Private-beta all-access (2026-11-08 ruling): BETA_ALL_ACCESS=true makes
+  // every account read as Pro through the subscriptions entitlement cache.
+  // Parsed unconditionally so a leaked 'true' refuses the boot in
+  // production even before billing is considered; only wired in below when
+  // billing is enabled.
+  const betaAllAccess=parseBetaAllAccess(process.env.BETA_ALL_ACCESS, online.environment);
   let subscriptions:Subscriptions|undefined,refreshOidcKeys:(() => Promise<void>)|undefined;
   if(billingEnabled){
     const appleConfig={bundleId:required('PRO_APPLE_BUNDLE_ID'),productId:required('PRO_APPLE_PRODUCT_ID')};
@@ -161,7 +168,7 @@ export function createRuntime() {
     const oidcEmail=required('PRO_GOOGLE_RTDN_SERVICE_ACCOUNT_EMAIL');
     if(!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.gserviceaccount\.com$/.test(oidcEmail))throw new Error('Invalid Pub/Sub push identity');
     refreshOidcKeys=()=>oidcKeys.refresh();
-    subscriptions=new Subscriptions(new PostgresBillingStore(pool),{apple:{config:appleConfig,trust,api:appleApi},google:{config:googleConfig,api:playApi,oidcKeys,oidcAudience,oidcEmail}});
+    subscriptions=new Subscriptions(new PostgresBillingStore(pool),{apple:{config:appleConfig,trust,api:appleApi},google:{config:googleConfig,api:playApi,oidcKeys,oidcAudience,oidcEmail}},Date.now,{betaAllAccess});
   }
   // Community aggregation stays off unless explicitly enabled. When on, the job
   // persists via the isolated aggregation tables through the allowlisted
