@@ -228,7 +228,7 @@ class FoodFirstCookScreenTest {
         // its Save also stays in the editor.
         val salt = runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).first { it.name == "Kosher salt" } }
         compose.onNodeWithTag("ingredient-edit-" + salt.id).performScrollTo().performClick()
-        compose.onNodeWithTag("food-ingredient-details").performClick()
+        compose.onNodeWithTag("food-ingredient-details").performScrollTo().performClick()
         compose.onNodeWithTag("food-ingredient-amount").performScrollTo().performTextReplacement("3")
         compose.onNodeWithTag("food-ingredient-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).first { it.id == salt.id }.amountValue == 3.0 } }
