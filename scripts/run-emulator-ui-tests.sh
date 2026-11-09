@@ -678,13 +678,52 @@ for kind in variant collection attempt; do
 done
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/android-meal-v9.zip > "$output_dir/portable-fixtures/android-meal-v9.zip"
 
-companion_test_output="$output_dir/companion-tests.txt"
-echo "Running cook playbook persistence and archive tests."
+# The companion selector outgrew a single invocation: its 101 tests could
+# not reliably finish inside the suite's 8-minute wrapper on the current
+# runner image's slower emulator draws — lanes died mid-suite with every
+# test so far passing (issue #296) — while the 25–50-test suites around it
+# fit comfortably. The selector therefore runs as three sequential chunks
+# in its original class order, each inside the same 8-minute wrapper the
+# 50-test recipe suite above uses. The chunks are disjoint, no class is
+# split, and their expected counts sum to the original 101 (guarded
+# below); each chunk must report its full count or the phase fails,
+# exactly as the single invocation did.
+companion_expected_total=0
+
+companion_1_test_output="$output_dir/companion-tests-1.txt"
+companion_1_expected_count=32
+echo "Running cook playbook persistence and archive tests (companion chunk 1 of 3: ${companion_1_expected_count} tests)."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest,com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest,com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest,com.pittech.CommunityBenchmarksTest,com.pittech.CommunityBenchmarksFlowTest,com.pittech.ProPersonalTest,com.pittech.ProPersonalFlowTest,com.pittech.WelcomeFlowTest,com.pittech.FlowingLiveScreenTest,com.pittech.FlowingStoryScreenTest,com.pittech.FlowingPlanBoardScreenTest,com.pittech.FlowingHappyPathFlowTest' \
-  "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (101 tests)' "$companion_test_output"
-! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
+  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest' \
+  "$instrumentation_target" | tee "$companion_1_test_output"
+grep -q "OK (${companion_1_expected_count} tests)" "$companion_1_test_output"
+! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_1_test_output"
+companion_expected_total=$((companion_expected_total + companion_1_expected_count))
+
+companion_2_test_output="$output_dir/companion-tests-2.txt"
+companion_2_expected_count=37
+echo "Running cook playbook persistence and archive tests (companion chunk 2 of 3: ${companion_2_expected_count} tests)."
+timeout 8m adb shell am instrument -w -r \
+  -e class 'com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest,com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest,com.pittech.CommunityBenchmarksTest' \
+  "$instrumentation_target" | tee "$companion_2_test_output"
+grep -q "OK (${companion_2_expected_count} tests)" "$companion_2_test_output"
+! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_2_test_output"
+companion_expected_total=$((companion_expected_total + companion_2_expected_count))
+
+companion_3_test_output="$output_dir/companion-tests-3.txt"
+companion_3_expected_count=32
+echo "Running cook playbook persistence and archive tests (companion chunk 3 of 3: ${companion_3_expected_count} tests)."
+timeout 8m adb shell am instrument -w -r \
+  -e class 'com.pittech.CommunityBenchmarksFlowTest,com.pittech.ProPersonalTest,com.pittech.ProPersonalFlowTest,com.pittech.WelcomeFlowTest,com.pittech.FlowingLiveScreenTest,com.pittech.FlowingStoryScreenTest,com.pittech.FlowingPlanBoardScreenTest,com.pittech.FlowingHappyPathFlowTest' \
+  "$instrumentation_target" | tee "$companion_3_test_output"
+grep -q "OK (${companion_3_expected_count} tests)" "$companion_3_test_output"
+! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_3_test_output"
+companion_expected_total=$((companion_expected_total + companion_3_expected_count))
+
+if [[ "$companion_expected_total" -ne 101 ]]; then
+  echo "Companion chunk expected counts sum to ${companion_expected_total}, not the suite's 101 tests." >&2
+  exit 1
+fi
 
 }
 
