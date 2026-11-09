@@ -17,7 +17,11 @@ jobs:
   android-checks:
     name: Build and emulator UI tests (API ${{ matrix.api }}, font ${{ matrix.font_scale }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # Anti-hang protection lives in the per-phase emulator step budgets
+    # below (each smaller than the old single 45-minute cliff, so a hang
+    # fails in its own phase with attribution). This job value is only a
+    # backstop covering the Gradle builds plus the sum of the phase budgets.
+    timeout-minutes: 150
     # Keep Android 17 emulator results advisory while its system graphics stack is unstable.
     continue-on-error: ${{ matrix.api == 37 }}
     strategy:
@@ -52,14 +56,40 @@ jobs:
         env:
           PITTECH_MATRIX_API: ${{ matrix.api }}
         run: |
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$sdk_root" ]]; then
+            echo "ANDROID_SDK_ROOT or ANDROID_HOME must point to the Android SDK." >&2
+            exit 1
+          fi
           if [[ "$PITTECH_MATRIX_API" == "37" ]]; then
             image="system-images;android-37.0;google_apis_ps16k;x86_64"
+            image_dir="$sdk_root/system-images/android-37.0/google_apis_ps16k/x86_64"
           else
             image="system-images;android-36;google_apis;x86_64"
+            image_dir="$sdk_root/system-images/android-36/google_apis/x86_64"
           fi
+          verify_image() {
+            [[ -f "$image_dir/system.img" ]] || return 1
+            if [[ -f "$image_dir/devices.xml" ]]; then
+              python3 -c 'import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])' "$image_dir/devices.xml" || return 1
+            fi
+            return 0
+          }
           for attempt in 1 2 3; do
-            if sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "$image" "emulator"; then exit 0; fi
-            echo "SDK download failed on attempt $attempt; retrying the selected image."
+            # Never trust the runner image's preinstalled system image: the
+            # 20261101.360.1 ubuntu-24.04 image shipped a corrupt devices.xml
+            # in both the android-36 and android-37.0 images, and sdkmanager
+            # skips packages it considers already installed, so a corrupt
+            # preinstalled copy would survive a plain --install. Delete any
+            # preinstalled copy first so every lane boots a freshly
+            # downloaded image, and verify the result before it is used.
+            rm -rf "$image_dir"
+            if sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "$image" "emulator" && verify_image; then
+              echo "Installed and verified a clean emulator image on attempt $attempt:"
+              cat "$image_dir/source.properties" || true
+              exit 0
+            fi
+            echo "SDK install or image verification failed on attempt $attempt; retrying with a fresh image."
           done
           exit 1
 
@@ -100,13 +130,57 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           test -e /dev/kvm
 
-      - name: Boot emulator and run app UI flows
-        id: android_emulator_ui
+      # The emulator phases run as separate steps of this job, sharing one
+      # emulator started (detached) by the boot phase. Each phase has its own
+      # budget below the old single 45-minute cliff; same script, same tests.
+      - name: Boot emulator
+        timeout-minutes: 20
         env:
           PITTECH_API_LEVEL: ${{ matrix.api }}
           PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
           PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
-        run: bash scripts/run-emulator-ui-tests.sh
+        run: bash scripts/run-emulator-ui-tests.sh boot
+
+      - name: Run upgrade and process-death phases
+        timeout-minutes: 25
+        env:
+          PITTECH_API_LEVEL: ${{ matrix.api }}
+          PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
+          PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
+        run: bash scripts/run-emulator-ui-tests.sh upgrade
+
+      - name: Run data and integration suites
+        timeout-minutes: 25
+        env:
+          PITTECH_API_LEVEL: ${{ matrix.api }}
+          PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
+          PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
+        run: bash scripts/run-emulator-ui-tests.sh suites
+
+      - name: Run UI flow suites
+        timeout-minutes: 30
+        env:
+          PITTECH_API_LEVEL: ${{ matrix.api }}
+          PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
+          PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
+        run: bash scripts/run-emulator-ui-tests.sh flows
+
+      - name: Run controller diagnostics suites
+        if: matrix.api == 36
+        timeout-minutes: 15
+        env:
+          PITTECH_API_LEVEL: ${{ matrix.api }}
+          PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
+          PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
+        run: bash scripts/run-emulator-ui-tests.sh controller
+
+      - name: Collect screenshots and verify crash recovery
+        timeout-minutes: 15
+        env:
+          PITTECH_API_LEVEL: ${{ matrix.api }}
+          PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
+          PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
+        run: bash scripts/run-emulator-ui-tests.sh verify
 
       - name: Upload exported Room schemas
         if: matrix.api == 36 && matrix.font_scale == '1.15'

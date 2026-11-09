@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The workflow runs this script once per phase (boot, upgrade, suites, flows,
+# controller, verify) as separate steps of one job, so each phase carries its
+# own step budget and a hang is attributed to the phase that hung. Invoked
+# with no argument it runs every phase in order, exactly as the previous
+# single-step version did. All phases of a job share one emulator: the boot
+# phase starts it detached (setsid, pid in $emulator_pid_file) and only the
+# verify phase — or any failure — stops it.
+phase="${1:-all}"
+case "$phase" in
+  all|boot|upgrade|suites|flows|controller|verify) ;;
+  *) echo "Usage: $0 [all|boot|upgrade|suites|flows|controller|verify]" >&2; exit 2 ;;
+esac
+
 api_level="${PITTECH_API_LEVEL:-36}"
 device_name="${PITTECH_EMULATOR_DEVICE:-pixel_2}"
 avd_name="pittech-ci-api-${api_level}"
@@ -38,6 +51,42 @@ mkdir -p "$output_dir"
 export ANDROID_AVD_HOME="${RUNNER_TEMP:-/tmp}/pittech-avd"
 mkdir -p "$ANDROID_AVD_HOME"
 
+
+emulator_pid_file="$output_dir/emulator.pid"
+instrumentation_target=""
+
+stop_emulator() {
+  adb emu kill >/dev/null 2>&1 || true
+  local pid_to_stop=""
+  if [[ -n "$emulator_pid" ]]; then
+    pid_to_stop="$emulator_pid"
+  elif [[ -f "$emulator_pid_file" ]]; then
+    pid_to_stop="$(cat "$emulator_pid_file" 2>/dev/null || true)"
+  fi
+  if [[ -n "$pid_to_stop" ]]; then
+    kill "$pid_to_stop" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+
+require_running_emulator() {
+  timeout 60 adb wait-for-device
+  local booted
+  booted="$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$booted" != "1" ]]; then
+    echo "The emulator started by the boot phase is not available; refusing to run the '$phase' phase without it." >&2
+    exit 1
+  fi
+}
+
+discover_instrumentation_target() {
+  instrumentation_target="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech\.debug)$/\1/p' | head -n 1 | tr -d '\r')"
+  if [[ -z "$instrumentation_target" ]]; then
+    echo "Could not find the installed PitTech instrumentation runner." >&2
+    adb shell pm list instrumentation >&2
+    exit 1
+  fi
+}
 collect_evidence_and_stop() {
   local result=$?
   set +e
@@ -60,122 +109,18 @@ collect_evidence_and_stop() {
     printf "Emulator script failed: exit=%s line=%s command=%s\\n" "$result" "${BASH_LINENO[0]:-unknown}" "${BASH_COMMAND:-unknown}" | tee "$output_dir/failure-context.txt" >&2
   fi
   python3 scripts/emit-ui-review-images.py "$output_dir/recipe-composed-live.png" "$output_dir/meal-finished-recipe-choice.png"
-  if [[ -n "$emulator_pid" ]]; then
-    adb emu kill >/dev/null 2>&1
-    wait "$emulator_pid" >/dev/null 2>&1
+  # Only the terminal phase (verify, or a full `all` run) stops the shared
+  # emulator; intermediate phases leave it running for the next step. Any
+  # failure also stops it, because the job ends there anyway.
+  if [[ "$phase" == "all" || "$phase" == "verify" ]] || (( result != 0 )); then
+    stop_emulator
+    if [[ -n "$emulator_pid" ]]; then
+      wait "$emulator_pid" >/dev/null 2>&1 || true
+    fi
   fi
   return "$result"
 }
 trap collect_evidence_and_stop EXIT
-
-echo "Creating a clean ${device_name} emulator image for API ${api_level}."
-printf 'no\n' | "$avdmanager_bin" create avd \
-  --force \
-  --name "$avd_name" \
-  --package "$system_image" \
-  --device "$device_name"
-
-avd_config="$ANDROID_AVD_HOME/${avd_name}.avd/config.ini"
-if (( api_level >= 37 )); then
-  if ! grep -Eq '^target=android-37(\.0)?$' "$ANDROID_AVD_HOME/${avd_name}.ini"; then
-    echo "The AVD tools did not recognize API 37; refusing an android-0 graphics configuration." >&2
-    cat "$ANDROID_AVD_HOME/${avd_name}.ini" >&2
-    exit 1
-  fi
-  if [[ ! -f "$avd_config" ]]; then
-    echo "The emulator AVD config was not created: $avd_config" >&2
-    exit 1
-  fi
-  if grep -q '^disk.dataPartition.size=' "$avd_config"; then
-    sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=8G/' "$avd_config"
-  else
-    printf '\ndisk.dataPartition.size=8G\n' >> "$avd_config"
-  fi
-  configured_data_partition="$(grep '^disk.dataPartition.size=' "$avd_config")"
-  if [[ "$configured_data_partition" != "disk.dataPartition.size=8G" ]]; then
-    echo "Could not set the Android 17 emulator data partition size." >&2
-    exit 1
-  fi
-  echo "Configured Android 17 emulator data partition: 8G."
-fi
-
-"$emulator_bin" \
-  -avd "$avd_name" \
-  -no-window \
-  -gpu lavapipe \
-  -noaudio \
-  -no-boot-anim \
-  -no-snapshot \
-  -camera-back none \
-  "${emulator_memory_args[@]}" \
-  -wipe-data \
-  > "$output_dir/emulator.log" 2>&1 &
-emulator_pid=$!
-
-adb start-server
-timeout 600 adb wait-for-device
-if (( api_level >= 37 )); then
-  # This preview image aborts in SurfaceFlinger's RegionSampling thread when
-  # its ranchu graphics mapper reads a color buffer through DMA.
-  timeout 30 adb root >/dev/null 2>&1 || true
-  timeout 60 adb wait-for-device
-  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\r')"
-  if [[ "$shell_uid" != "0" ]]; then
-    echo "Android 17 emulator did not grant root shell access." >&2
-    exit 1
-  fi
-  timeout 20 adb shell setprop debug.sf.luma_sampling 0
-  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\r')"
-  if [[ "$luma_sampling_value" != "0" ]]; then
-    echo "Could not disable SurfaceFlinger luma sampling." >&2
-    exit 1
-  fi
-  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
-  timeout 20 adb shell stop surfaceflinger
-  timeout 20 adb shell start surfaceflinger
-  timeout 60 adb wait-for-device
-  for _ in $(seq 1 30); do
-    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
-    if [[ -n "$new_surfaceflinger_pid" && "$new_surfaceflinger_pid" != "$old_surfaceflinger_pid" ]]; then
-      break
-    fi
-    sleep 1
-  done
-  if [[ -z "$new_surfaceflinger_pid" || "$new_surfaceflinger_pid" == "$old_surfaceflinger_pid" ]]; then
-    echo "SurfaceFlinger did not restart with luma sampling disabled." >&2
-    exit 1
-  fi
-fi
-boot_deadline=$((SECONDS + 600))
-until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
-  if (( SECONDS >= boot_deadline )); then
-    echo "The Android emulator did not finish booting within 10 minutes." >&2
-    cat "$output_dir/emulator.log" >&2
-    exit 1
-  fi
-  if ! kill -0 "$emulator_pid" 2>/dev/null; then
-    echo "The Android emulator process exited before boot completed." >&2
-    cat "$output_dir/emulator.log" >&2
-    exit 1
-  fi
-  sleep 5
-done
-
-timeout 30 adb shell settings put global window_animation_scale 0
-timeout 30 adb shell settings put global transition_animation_scale 0
-timeout 30 adb shell settings put global animator_duration_scale 0
-font_scale="${PITTECH_FONT_SCALE:-1.15}"
-timeout 30 adb shell settings put system font_scale "$font_scale"
-echo "Using Android font scale ${font_scale}."
-
-echo "Running Compose UI tests on the booted emulator."
-app_apk="${GITHUB_WORKSPACE:-$(pwd)}/app/build/outputs/apk/debug/app-debug.apk"
-test_apk="${GITHUB_WORKSPACE:-$(pwd)}/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
-if [[ ! -f "$app_apk" || ! -f "$test_apk" ]]; then
-  echo "Build the app and instrumented test APKs before running this script." >&2
-  echo "Expected: $app_apk and $test_apk" >&2
-  exit 1
-fi
 
 # #187: the first-run welcome would otherwise greet every UI-test class on a
 # fresh data state — including the previous-release build below, which is
@@ -204,6 +149,205 @@ seed_welcome_seen() {
   done
   echo "WARNING: could not seed the welcome-seen flag; UI tests may hit the first-run welcome." >&2
 }
+
+assert_png_file() {
+  local name="$1"
+  local screenshot="$2"
+  if ! python3 - "$screenshot" <<'PY'
+import pathlib
+import sys
+
+if not pathlib.Path(sys.argv[1]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
+    raise SystemExit(1)
+PY
+  then
+    rm -f "$screenshot"
+    echo "The ${name} screenshot is missing or invalid." >&2
+    return 1
+  fi
+}
+
+png_has_magic() {
+  python3 - "$1" <<'PY'
+import pathlib
+import sys
+
+try:
+    data = pathlib.Path(sys.argv[1]).read_bytes()
+except OSError:
+    raise SystemExit(1)
+if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+    raise SystemExit(1)
+PY
+}
+
+pull_app_screenshot() {
+  local name="$1"
+  local screenshot="$output_dir/${name}.png"
+  # A single adb exec-out transfer can come back garbled under emulator
+  # load even when the file is intact on the device: in the PR #222
+  # cycle-4 API 36 / font 1.15 cell every suite passed and the first pull
+  # still produced a non-PNG, while the failure collector's guarded pull
+  # of the same file seconds later landed a valid PNG in the artifact.
+  # Verify the file exists on the device and retry the transfer before
+  # treating the screenshot as missing; a file that is truly absent or
+  # invalid still fails through assert_png_file below.
+  local attempt
+  for attempt in 1 2 3 4; do
+    if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${name}.png" >/dev/null 2>&1; then
+      timeout 20 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${name}.png" > "$screenshot" 2>/dev/null
+      if png_has_magic "$screenshot"; then
+        echo "Saved emulator screenshot: ${name}.png"
+        return 0
+      fi
+    fi
+    echo "Pull of ${name}.png (attempt ${attempt}) did not yield a valid PNG." >&2
+    sleep 2
+  done
+  assert_png_file "$name" "$screenshot"
+  echo "Saved emulator screenshot: ${name}.png"
+}
+
+
+# One boot attempt. Runs with errexit suppressed by the caller's `if`, so
+# every failure path returns 1 explicitly. A corrupt runner-image system
+# image can kill the emulator or its graphics stack before boot completes;
+# the caller retries once on a fresh AVD instead of losing the whole lane.
+boot_emulator_once() {
+printf 'no\n' | "$avdmanager_bin" create avd \
+  --force \
+  --name "$avd_name" \
+  --package "$system_image" \
+  --device "$device_name"
+
+avd_config="$ANDROID_AVD_HOME/${avd_name}.avd/config.ini"
+if (( api_level >= 37 )); then
+  if ! grep -Eq '^target=android-37(\.0)?$' "$ANDROID_AVD_HOME/${avd_name}.ini"; then
+    echo "The AVD tools did not recognize API 37; refusing an android-0 graphics configuration." >&2
+    cat "$ANDROID_AVD_HOME/${avd_name}.ini" >&2
+    return 1
+  fi
+  if [[ ! -f "$avd_config" ]]; then
+    echo "The emulator AVD config was not created: $avd_config" >&2
+    return 1
+  fi
+  if grep -q '^disk.dataPartition.size=' "$avd_config"; then
+    sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=8G/' "$avd_config"
+  else
+    printf '\ndisk.dataPartition.size=8G\n' >> "$avd_config"
+  fi
+  configured_data_partition="$(grep '^disk.dataPartition.size=' "$avd_config")"
+  if [[ "$configured_data_partition" != "disk.dataPartition.size=8G" ]]; then
+    echo "Could not set the Android 17 emulator data partition size." >&2
+    return 1
+  fi
+  echo "Configured Android 17 emulator data partition: 8G."
+fi
+
+setsid "$emulator_bin" \
+  -avd "$avd_name" \
+  -no-window \
+  -gpu lavapipe \
+  -noaudio \
+  -no-boot-anim \
+  -no-snapshot \
+  -camera-back none \
+  "${emulator_memory_args[@]}" \
+  -wipe-data \
+  > "$output_dir/emulator.log" 2>&1 &
+emulator_pid=$!
+printf '%s' "$emulator_pid" > "$emulator_pid_file"
+
+adb start-server || return 1
+timeout 240 adb wait-for-device || return 1
+
+if (( api_level >= 37 )); then
+  # This preview image aborts in SurfaceFlinger's RegionSampling thread when
+  # its ranchu graphics mapper reads a color buffer through DMA.
+  timeout 30 adb root >/dev/null 2>&1 || true
+  timeout 60 adb wait-for-device || return 1
+  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\r')"
+  if [[ "$shell_uid" != "0" ]]; then
+    echo "Android 17 emulator did not grant root shell access." >&2
+    return 1
+  fi
+  timeout 20 adb shell setprop debug.sf.luma_sampling 0 || return 1
+  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\r')"
+  if [[ "$luma_sampling_value" != "0" ]]; then
+    echo "Could not disable SurfaceFlinger luma sampling." >&2
+    return 1
+  fi
+  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
+  timeout 20 adb shell stop surfaceflinger || return 1
+  timeout 20 adb shell start surfaceflinger || return 1
+  timeout 60 adb wait-for-device || return 1
+  for _ in $(seq 1 30); do
+    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
+    if [[ -n "$new_surfaceflinger_pid" && "$new_surfaceflinger_pid" != "$old_surfaceflinger_pid" ]]; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ -z "$new_surfaceflinger_pid" || "$new_surfaceflinger_pid" == "$old_surfaceflinger_pid" ]]; then
+    echo "SurfaceFlinger did not restart with luma sampling disabled." >&2
+    return 1
+  fi
+fi
+
+boot_deadline=$((SECONDS + 420))
+until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
+  if (( SECONDS >= boot_deadline )); then
+    echo "The Android emulator did not finish booting within 7 minutes." >&2
+    cat "$output_dir/emulator.log" >&2
+    return 1
+  fi
+  if ! kill -0 "$emulator_pid" 2>/dev/null; then
+    echo "The Android emulator process exited before boot completed." >&2
+    cat "$output_dir/emulator.log" >&2
+    return 1
+  fi
+  sleep 5
+done
+  return 0
+}
+
+run_boot_phase() {
+  echo "Creating a clean ${device_name} emulator image for API ${api_level}."
+  local attempt
+  for attempt in 1 2; do
+    if boot_emulator_once; then
+      echo "Emulator booted on attempt ${attempt}."
+      break
+    fi
+    echo "Emulator boot attempt ${attempt} did not complete." >&2
+    stop_emulator
+    emulator_pid=""
+    rm -f "$emulator_pid_file"
+    rm -rf "${ANDROID_AVD_HOME:?}/${avd_name}.avd" "${ANDROID_AVD_HOME:?}/${avd_name}.ini"
+    if [[ "$attempt" == "2" ]]; then
+      echo "The Android emulator did not boot after two attempts." >&2
+      exit 1
+    fi
+    echo "Retrying the boot once with a fresh AVD."
+  done
+
+timeout 30 adb shell settings put global window_animation_scale 0
+timeout 30 adb shell settings put global transition_animation_scale 0
+timeout 30 adb shell settings put global animator_duration_scale 0
+font_scale="${PITTECH_FONT_SCALE:-1.15}"
+timeout 30 adb shell settings put system font_scale "$font_scale"
+echo "Using Android font scale ${font_scale}."
+}
+
+
+phase_upgrade() {
+app_apk="${GITHUB_WORKSPACE:-$(pwd)}/app/build/outputs/apk/debug/app-debug.apk"
+test_apk="${GITHUB_WORKSPACE:-$(pwd)}/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+if [[ ! -f "$app_apk" || ! -f "$test_apk" ]]; then
+  echo "Build the app and instrumented test APKs before running this script." >&2
+  echo "Expected: $app_apk and $test_apk" >&2
+  exit 1
+fi
 
 previous_dir="${RUNNER_TEMP:-/tmp}/pittech-before"
 if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
@@ -456,6 +600,11 @@ fi
 timeout 3m adb shell am instrument -w -r -e previousReceipt "$previous_receipt" -e class 'com.pittech.TelemetryProcessDeathTest#validateRestoredCookWithoutOpeningAnActivity' "$instrumentation_target" | tee "$output_dir/telemetry-process-validate.txt"
 grep -q 'OK (1 test)' "$output_dir/telemetry-process-validate.txt"
 
+}
+
+phase_suites() {
+  discover_instrumentation_target
+
 telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
 telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.CombustionAnchorStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
 echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
@@ -537,6 +686,11 @@ timeout 8m adb shell am instrument -w -r \
 grep -q 'OK (101 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
+}
+
+phase_flows() {
+  discover_instrumentation_target
+
 test_output="$output_dir/instrumented-tests.txt"
 if (( api_level >= 37 )); then
   test_selector='com.pittech.PitTechUserFlowsTest#test01_homeNavigationAndPrimaryActionAreClear,com.pittech.PitTechUserFlowsTest#test02_createCookWithDishAndPreparationAndSaveLocally'
@@ -582,6 +736,13 @@ for expected_test in "${expected_tests[@]}"; do
 done
 echo "All ${#expected_tests[@]} expected PitTech UI tests passed."
 
+}
+
+phase_controller() {
+  if (( api_level == 36 )); then
+    discover_instrumentation_target
+  fi
+
 if (( api_level == 36 )); then
   controller_test_selector='com.pittech.ui.ControllerDiagnosticsScreenTest,com.pittech.devices.MongooseRpcInterrogationPlannerTest,com.pittech.devices.MongooseRpcResponseParserTest,com.pittech.devices.ControllerStableFingerprintTest,com.pittech.devices.ControllerDiagnosticSanitizerTest,com.pittech.devices.PitBossCloudProtocolTest'
   controller_test_output="$output_dir/controller-diagnostics-tests.txt"
@@ -599,65 +760,9 @@ if (( api_level == 36 )); then
   fi
   echo "All ${controller_expected_count} controller interrogation instrumentation tests passed."
 fi
-
-assert_png_file() {
-  local name="$1"
-  local screenshot="$2"
-  if ! python3 - "$screenshot" <<'PY'
-import pathlib
-import sys
-
-if not pathlib.Path(sys.argv[1]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
-    raise SystemExit(1)
-PY
-  then
-    rm -f "$screenshot"
-    echo "The ${name} screenshot is missing or invalid." >&2
-    return 1
-  fi
 }
 
-png_has_magic() {
-  python3 - "$1" <<'PY'
-import pathlib
-import sys
-
-try:
-    data = pathlib.Path(sys.argv[1]).read_bytes()
-except OSError:
-    raise SystemExit(1)
-if not data.startswith(b"\x89PNG\r\n\x1a\n"):
-    raise SystemExit(1)
-PY
-}
-
-pull_app_screenshot() {
-  local name="$1"
-  local screenshot="$output_dir/${name}.png"
-  # A single adb exec-out transfer can come back garbled under emulator
-  # load even when the file is intact on the device: in the PR #222
-  # cycle-4 API 36 / font 1.15 cell every suite passed and the first pull
-  # still produced a non-PNG, while the failure collector's guarded pull
-  # of the same file seconds later landed a valid PNG in the artifact.
-  # Verify the file exists on the device and retry the transfer before
-  # treating the screenshot as missing; a file that is truly absent or
-  # invalid still fails through assert_png_file below.
-  local attempt
-  for attempt in 1 2 3 4; do
-    if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${name}.png" >/dev/null 2>&1; then
-      timeout 20 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${name}.png" > "$screenshot" 2>/dev/null
-      if png_has_magic "$screenshot"; then
-        echo "Saved emulator screenshot: ${name}.png"
-        return 0
-      fi
-    fi
-    echo "Pull of ${name}.png (attempt ${attempt}) did not yield a valid PNG." >&2
-    sleep 2
-  done
-  assert_png_file "$name" "$screenshot"
-  echo "Saved emulator screenshot: ${name}.png"
-}
-
+phase_verify() {
 pull_app_screenshot telemetry-connections
 pull_app_screenshot telemetry-ha-onboarding
 pull_app_screenshot home-empty
@@ -712,7 +817,7 @@ fi
 
 if (( api_level >= 37 )); then
   echo "Android 17 launch and cook-save smoke checks passed."
-  exit 0
+  return 0
 fi
 
 pull_app_screenshot cook-log-entry
@@ -824,3 +929,21 @@ PY
 sleep 3
 timeout 20 adb exec-out screencap -p > "$output_dir/restarted-home.png"
 assert_png_file "restarted-home" "$output_dir/restarted-home.png"
+}
+
+case "$phase" in
+  all)
+    run_boot_phase
+    phase_upgrade
+    phase_suites
+    phase_flows
+    phase_controller
+    phase_verify
+    ;;
+  boot) run_boot_phase ;;
+  upgrade) require_running_emulator; phase_upgrade ;;
+  suites) require_running_emulator; phase_suites ;;
+  flows) require_running_emulator; phase_flows ;;
+  controller) require_running_emulator; phase_controller ;;
+  verify) require_running_emulator; phase_verify ;;
+esac
