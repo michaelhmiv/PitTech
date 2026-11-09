@@ -12,6 +12,7 @@ import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -212,11 +213,17 @@ class FoodFirstCookScreenTest {
         compose.onNodeWithTag("food-ingredient-name").performImeAction()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).any { it.name == "Kosher salt" && it.dishId == brisket.id } } }
         dismissNotice()
+        // The box cleared and kept focus — the headline contract.
         compose.onNodeWithTag("food-ingredient-name").assertExists().assert(isFocused())
+        assertEquals("", compose.onNodeWithTag("food-ingredient-name").fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         compose.onNodeWithTag("food-ingredient-name").performTextInput("Black pepper")
         compose.onNodeWithTag("food-ingredient-name").performImeAction()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).count { it.dishId == brisket.id } == 2 } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) {
+            val rows = app.database.cookDao().getIngredientsForCook(cookId).filter { it.dishId == brisket.id }
+            rows.size == 2 && rows.any { it.name == "Black pepper" }
+        } }
         dismissNotice()
+        assertEquals("", compose.onNodeWithTag("food-ingredient-name").fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         // Detail editing still works by tapping a listed ingredient, and
         // its Save also stays in the editor.
         val salt = runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).first { it.name == "Kosher salt" } }

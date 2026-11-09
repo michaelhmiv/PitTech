@@ -45,8 +45,9 @@ import java.util.UUID
     val nameFocus = remember { FocusRequester() }
     LaunchedEffect(selectedId) { if (selectedId == null) nameFocus.requestFocus() }
     fun saveAndReset() {
+        val trimmedName = name.trim()
         val ingredient = (selected ?: IngredientEntity(UUID.randomUUID().toString(), data.cook.id, dish.id,
-            stage, name, createdAtUtcMillis = System.currentTimeMillis())).copy(name = name, stage = stage,
+            stage, trimmedName, createdAtUtcMillis = System.currentTimeMillis())).copy(name = trimmedName, stage = stage,
             brand = brand.trim().ifBlank { null }, amountValue = CookEntryValidation.optionalPositiveNumber(amount), amountText = amount.trim().ifBlank { null },
             amountUnit = unit.takeIf { amount.isNotBlank() }, notes = notes.trim().ifBlank { null },
             appliedAtUtcMillis = appliedAt.takeIf { includeTime })
