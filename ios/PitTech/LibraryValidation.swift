@@ -71,6 +71,19 @@ struct CookNoteMetadata: Codable, Equatable {
         return String(data: (try? JSONEncoder().encode(copy)) ?? Data(), encoding: .utf8) ?? ""
     }
 }
+extension CookNoteMetadata {
+    /// #284: rapid type-and-enter append for the composer's quick-add box.
+    /// Trims the typed name; blank names and a full list (100, the
+    /// validation cap) append nothing and report false. The appended item
+    /// carries the same defaults the "+ Ingredient" button uses.
+    @discardableResult mutating func appendQuickIngredient(named rawName: String) -> Bool {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, (ingredients ?? []).count < 100 else { return false }
+        ingredients = (ingredients ?? []) + [NoteIngredient(name: name)]
+        version = 2
+        return true
+    }
+}
 struct NoteIngredient: Codable, Equatable {
     var name = ""
     var stage = "main_ingredient"

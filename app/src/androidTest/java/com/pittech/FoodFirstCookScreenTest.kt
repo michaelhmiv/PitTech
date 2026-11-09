@@ -147,6 +147,10 @@ class FoodFirstCookScreenTest {
         compose.onNodeWithTag("food-ingredient-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).any { it.name == "Butter" && it.dishId == potatoes.id && it.amountValue == null } } }
         dismissNotice()
+        // #284: Save no longer dismisses the ingredients editor; Close is
+        // the explicit exit.
+        compose.onNodeWithTag("food-ingredient-name").assertExists()
+        compose.onNodeWithText("Close").performClick()
         compose.onNodeWithTag("food-probes-" + potatoes.id).performScrollTo().performClick()
         compose.onNodeWithTag("probe-move-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getProbesForCook(cookId).any { it.name == "Probe 1" && it.assignedDishId == potatoes.id } } }
@@ -185,5 +189,57 @@ class FoodFirstCookScreenTest {
         chooseFilter("notes")
         compose.onNodeWithTag("timeline-list").performScrollToNode(hasText("Tender at the center"))
         compose.onNodeWithText("Tender at the center").assertIsDisplayed()
+    }
+
+    // #284: rapid type-and-enter ingredient entry in the dish ingredients
+    // editor and in the note composer. Enter files the entry, the editor
+    // stays open with the box cleared and focused, Save no longer dismisses,
+    // and detail editing still works by tapping a listed ingredient.
+    @Test fun ingredientQuickEntryKeepsEditorOpenAndDetailsStillEdit() {
+        lateinit var brisket: DishEntity
+        val cookId = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val id = app.cookRepository.startCook(NewCookDraft("Quick entry cook", dishes = listOf(DishDraft("Brisket", "Beef"))))
+            brisket = app.database.cookDao().getDishesForCook(id).single()
+            id
+        }
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Quick entry cook").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Quick entry cook").performClick()
+        compose.onNodeWithTag("food-card-" + brisket.id, useUnmergedTree = true).performScrollTo().performClick()
+        compose.onNodeWithTag("food-ingredients-" + brisket.id).performScrollTo().performClick()
+        // Two seasonings, two typings, two enters — nothing else.
+        compose.onNodeWithTag("food-ingredient-name").performTextInput("Kosher salt")
+        compose.onNodeWithTag("food-ingredient-name").performImeAction()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).any { it.name == "Kosher salt" && it.dishId == brisket.id } } }
+        dismissNotice()
+        compose.onNodeWithTag("food-ingredient-name").assertExists().assert(isFocused())
+        compose.onNodeWithTag("food-ingredient-name").performTextInput("Black pepper")
+        compose.onNodeWithTag("food-ingredient-name").performImeAction()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).count { it.dishId == brisket.id } == 2 } }
+        dismissNotice()
+        // Detail editing still works by tapping a listed ingredient, and
+        // its Save also stays in the editor.
+        val salt = runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).first { it.name == "Kosher salt" } }
+        compose.onNodeWithTag("ingredient-edit-" + salt.id).performScrollTo().performClick()
+        compose.onNodeWithTag("food-ingredient-details").performClick()
+        compose.onNodeWithTag("food-ingredient-amount").performScrollTo().performTextReplacement("3")
+        compose.onNodeWithTag("food-ingredient-save").performClick()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getIngredientsForCook(cookId).first { it.id == salt.id }.amountValue == 3.0 } }
+        dismissNotice()
+        compose.onNodeWithTag("food-ingredient-name").assertExists()
+        // Close is the explicit exit.
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithTag("food-ingredient-name").assertDoesNotExist()
+        // The note composer's list gets the same quick-add treatment.
+        compose.onNodeWithTag("food-general-" + brisket.id).performScrollTo().performClick()
+        compose.onNodeWithTag("timeline-entry-more-details").performScrollTo().performClick()
+        compose.onNodeWithTag("ingredient-quick-add").performScrollTo().performTextInput("Smoked paprika")
+        compose.onNodeWithTag("ingredient-quick-add").performImeAction()
+        compose.onNodeWithTag("ingredient-row-0").performScrollTo().assertTextContains("Smoked paprika")
+        compose.onNodeWithTag("timeline-entry-details").performScrollTo().performClick().performTextInput("Rub applied")
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) {
+            app.database.cookDao().getTimelineEventsForCook(cookId).any { it.noteMetadataJson?.contains("Smoked paprika") == true }
+        } }
     }
 }
