@@ -68,7 +68,7 @@ targets:
         # store product exists; the paywall treats empty as not-configured.
         PITTECH_PRO_PRODUCT_ID: ""
         PITTECH_ONLINE_ENVIRONMENT: "production"
-        PITTECH_ONLINE_ENABLED: "NO"
+        PITTECH_ONLINE_ENABLED: "YES"
         PITTECH_STORE_SANDBOX_BUILD: "NO"
         PITTECH_PUBLIC_HOST: "pittech.app"
         PITTECH_LINK_SCHEME: "pittech"
@@ -87,13 +87,13 @@ targets:
         Staging:
           PRODUCT_BUNDLE_IDENTIFIER: com.pittech.staging
           PITTECH_ONLINE_ENVIRONMENT: "staging"
-          PITTECH_ONLINE_ENABLED: "NO"
+          PITTECH_ONLINE_ENABLED: "YES"
           PITTECH_PUBLIC_HOST: "staging.pittech.app"
           PITTECH_LINK_SCHEME: "pittech-staging"
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG"
         StoreSandbox:
           PITTECH_ONLINE_ENVIRONMENT: "staging"
-          PITTECH_ONLINE_ENABLED: "NO"
+          PITTECH_ONLINE_ENABLED: "YES"
           PITTECH_STORE_SANDBOX_BUILD: "YES"
           PITTECH_PUBLIC_HOST: "staging.pittech.app"
           PITTECH_LINK_SCHEME: "pittech-staging"
