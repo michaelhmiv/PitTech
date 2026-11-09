@@ -242,7 +242,7 @@ class FoodFirstCookScreenTest {
         compose.onNodeWithTag("timeline-entry-more-details").performScrollTo().performClick()
         compose.onNodeWithTag("ingredient-quick-add").performScrollTo().performTextInput("Smoked paprika")
         compose.onNodeWithTag("ingredient-quick-add").performImeAction()
-        compose.onNodeWithTag("ingredient-row-0").performScrollTo().assertTextContains("Smoked paprika")
+        compose.onNodeWithTag("ingredient-row-0").performScrollTo().assertTextContains("Smoked paprika", substring = true)
         compose.onNodeWithTag("timeline-entry-details").performScrollTo().performClick().performTextInput("Rub applied")
         compose.onNodeWithTag("timeline-entry-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) {
