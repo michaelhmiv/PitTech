@@ -11,7 +11,7 @@ final class PublicLinkTests: XCTestCase {
         for input in try XCTUnwrap(fixture["invalid"] as? [String]) { XCTAssertThrowsError(try NativePublicLink.destination(input), input) }
     }
     @MainActor func testDisabledCommunityRejectsNavigationWithoutImportingOrLoggingIn() {
-        let coordinator = NativePublicCoordinator()
+        let coordinator = NativePublicCoordinator(enabled: false)
         XCTAssertFalse(coordinator.receivePublic(URL(string: "https://pittech.app/p/oak_cook")!))
         XCTAssertTrue(coordinator.path.isEmpty)
         XCTAssertEqual(coordinator.linkSequence, 0)

@@ -123,7 +123,7 @@ import Security
     func testDisabledAccountsAndStorageFailureNeverSendMail() async {
         let memory = Memory(); var calls = 0
         let api = API { _, _ in calls += 1; return Data() }
-        let disabled = NativeAccountCoordinator(vault: memory, api: api); await disabled.start("cook@example.com")
+        let disabled = NativeAccountCoordinator(enabled: false, vault: memory, api: api); await disabled.start("cook@example.com")
         memory.fail = true
         let failing = NativeAccountCoordinator(enabled: true, vault: memory, api: api); await failing.start("cook@example.com")
         XCTAssertEqual(calls, 0)
