@@ -155,7 +155,13 @@ class StoreScreenshotCaptureTest {
             // 3 — Cook Timeline: the same cook's story — milestones,
             // notes, and temperature entries.
             compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
-            awaitTrue(15_000) { compose.onAllNodesWithText("Wrapped in butcher paper", substring = true).fetchSemanticsNodes().isNotEmpty() }
+            // Proof the tab composed: its list exists only on this tab.
+            // (Waiting on one entry's text is not viable — the list is
+            // virtualized, so an entry an hour into the story is not
+            // composed until scrolled to; the second dispatch run timed
+            // out on exactly that.)
+            awaitTrue(15_000) { compose.onAllNodesWithTag("timeline-list", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            compose.waitForIdle()
             capture("timeline")
 
             // 4 — Cook History: back to Meals and open the finished
@@ -165,7 +171,9 @@ class StoreScreenshotCaptureTest {
             awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("cook-card-$ghost").performScrollTo().performClick()
             awaitTrue(15_000) { compose.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            awaitTrue(15_000) { compose.onAllNodesWithTag("timeline-list", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitForIdle()
             capture("history")
         }
     }

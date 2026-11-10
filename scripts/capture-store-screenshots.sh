@@ -132,6 +132,11 @@ timeout 15m adb shell am instrument -w -r \
 if ! grep -q 'OK (1 test)' "$test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$test_output"; then
   echo "The store screenshot capture test did not pass." >&2
   timeout 20 adb exec-out screencap -p > "$output_dir/final-emulator-screen.png" 2>/dev/null || true
+  # Salvage any captures the test did write before failing, so a
+  # late-step failure still shows how far the journey got.
+  for salvage in home live-board timeline history; do
+    timeout 15 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/store-${salvage}.png" > "$output_dir/${salvage}.png" 2>/dev/null || true
+  done
   exit 1
 fi
 
