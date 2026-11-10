@@ -1,12 +1,15 @@
 package com.pittech
 
+import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.data.CookResultEntity
 import com.pittech.domain.*
+import com.pittech.ui.WelcomePreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -24,9 +27,19 @@ import java.io.File
  * pace, plus its finished predecessor for history), walks the real UI,
  * and writes full-device PNGs into files/pittech-ui-test/store-*.png for
  * the workflow to pull.
+ *
+ * State is prepared BEFORE the activity launches, following
+ * WelcomeFlowTest's discipline: the first-run welcome (#187) gates the
+ * launch surface off a persisted flag read at composition, and mutating
+ * preferences or the database under a running activity races it. The
+ * capture therefore marks the welcome seen, seeds, and only then starts
+ * MainActivity — on a stone-cold emulator install nothing else gets the
+ * Meals surface composed (first dispatch run, 2026-11-10: the seeded
+ * cooks never appeared because the welcome held the surface).
  */
+@OptIn(ExperimentalTestApi::class)
 class StoreScreenshotCaptureTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    @get:Rule val compose = createEmptyComposeRule()
 
     private fun app() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as PitTechApplication
 
@@ -50,6 +63,19 @@ class StoreScreenshotCaptureTest {
         // Let charts/animations settle fully before the next navigation so
         // the following capture never catches a transition frame.
         Thread.sleep(1_000)
+    }
+
+    // Polling wait in the same shape as the other suites' waitUntil
+    // calls, but not tied to a compose-rule flavour: this class runs on
+    // createEmptyComposeRule (launch-last discipline), where the
+    // node-fetch API is the common denominator.
+    private fun awaitTrue(timeoutMs: Long, condition: () -> Boolean) {
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000
+        while (System.nanoTime() < deadline) {
+            if (condition()) return
+            Thread.sleep(250)
+        }
+        if (!condition()) throw AssertionError("Condition still not satisfied after $timeoutMs ms")
     }
 
     private fun dismissNotice() {
@@ -102,36 +128,45 @@ class StoreScreenshotCaptureTest {
 
     @Test fun captureStoreScreenshots() {
         val app = app()
+        // Prepare first, launch last (see the class doc): mark the
+        // first-run welcome seen and seed the showcase cooks before
+        // MainActivity composes anything.
+        val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+        WelcomePreferences.markSeen(targetContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE))
         val (ghost, live) = seedShowcase(app)
 
-        // 1 — Home / Meals: the cook log with Start a Cook up front, the
-        // live cook and the finished one both listed.
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("Flowing brisket").fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
-        dismissNotice()
-        compose.waitForIdle()
-        capture("home")
+        ActivityScenario.launch(MainActivity::class.java).use {
+            // 1 — Home / Meals: the cook log with Start a Cook up front,
+            // the live cook and the finished one both listed.
+            awaitTrue(15_000) { compose.onAllNodesWithText("Flowing brisket").fetchSemanticsNodes().isNotEmpty() }
+            awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
+            dismissNotice()
+            compose.waitForIdle()
+            capture("home")
 
-        // 2 — Live Board: verdict headline + ETA range composed means the
-        // board has real data on screen, not a loading state.
-        compose.onNodeWithText("Flowing brisket").performClick()
-        compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-verdict-headline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-eta-range", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        capture("live-board")
+            // 2 — Live Board: verdict headline + ETA range composed
+            // means the board has real data on screen, not a loading
+            // state.
+            compose.onNodeWithText("Flowing brisket").performClick()
+            awaitTrue(15_000) { compose.onAllNodesWithTag("live-verdict-headline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            awaitTrue(15_000) { compose.onAllNodesWithTag("live-eta-range", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            capture("live-board")
 
-        // 3 — Cook Timeline: the same cook's story — milestones, notes,
-        // and temperature entries.
-        compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("Wrapped in butcher paper", substring = true).fetchSemanticsNodes().isNotEmpty() }
-        capture("timeline")
+            // 3 — Cook Timeline: the same cook's story — milestones,
+            // notes, and temperature entries.
+            compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
+            awaitTrue(15_000) { compose.onAllNodesWithText("Wrapped in butcher paper", substring = true).fetchSemanticsNodes().isNotEmpty() }
+            capture("timeline")
 
-        // 4 — Cook History: back to Meals and open the finished cook; a
-        // completed cook opens on its summary/timeline record.
-        Espresso.pressBack()
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("cook-card-$ghost").performScrollTo().performClick()
-        compose.waitUntil(15_000) { compose.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
-        capture("history")
+            // 4 — Cook History: back to Meals and open the finished
+            // cook; a completed cook opens on its summary/timeline
+            // record.
+            Espresso.pressBack()
+            awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("cook-card-$ghost").performScrollTo().performClick()
+            awaitTrue(15_000) { compose.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
+            capture("history")
+        }
     }
 }
