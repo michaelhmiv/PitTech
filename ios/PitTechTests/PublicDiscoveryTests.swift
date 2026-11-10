@@ -133,7 +133,7 @@ import XCTest
     }
     func testForeignMediaAndDisabledDiscoveryNeverBecomeNetworkOrImportActions() async throws {
         let (_, fixture) = try fixture(),api = PublicTestAPI(fixture: fixture)
-        let disabled = NativePublicCoordinator(api: api)
+        let disabled = NativePublicCoordinator(enabled: false, api: api)
         await disabled.refresh(sort: "liked", food: "", query: "")
         let count = await api.count();XCTAssertEqual(count, 0)
         var detail = fixture["detail"] as! [String: Any],media = detail["media"] as! [[String: Any]]

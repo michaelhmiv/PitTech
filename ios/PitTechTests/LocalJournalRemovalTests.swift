@@ -110,7 +110,7 @@ import UIKit
         let store = CookStore(directory: try folder())
         store.startCook(title: "Ribs", firstDish: "Rack")
         let cook = try XCTUnwrap(store.activeCooks.first)
-        let coordinator = NativeAccountCoordinator(vault: Memory(), removeJournal: { try store.removeLocalJournal() })
+        let coordinator = NativeAccountCoordinator(enabled: false, vault: Memory(), removeJournal: { try store.removeLocalJournal() })
         XCTAssertFalse(coordinator.enabled)
         coordinator.removeLocalJournal()
         XCTAssertTrue(coordinator.message?.contains("active cook") == true)
