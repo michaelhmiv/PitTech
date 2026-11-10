@@ -19,6 +19,9 @@ struct CookNoteComposer: View {
     @State private var spritzChoice: SpritzState = .yes
     @State private var spritzMediumText = ""
     @State private var captureLoaded = false
+    // #284: rapid type-and-enter ingredient entry.
+    @State private var quickIngredientName = ""
+    @FocusState private var quickIngredientFocused: Bool
     var body: some View {
         NavigationStack {
             Form {
@@ -71,6 +74,13 @@ struct CookNoteComposer: View {
                             TextField("Duration in minutes (optional)", text: $durationText).keyboardType(.decimalPad)
                                 .onChange(of: durationText) { _, raw in draft.metadata.durationMillis = Double(raw).map { $0 * 60000 }; draft.metadata.version = 2 }
                         }
+                        // #284: type a name, hit Return, the ingredient is
+                        // appended and the box clears and keeps focus for
+                        // the next one. Detail rows below stay as they are.
+                        TextField("Add ingredient", text: $quickIngredientName)
+                            .onSubmit { quickAddIngredient() }
+                            .focused($quickIngredientFocused)
+                            .accessibilityIdentifier("composer-ingredient-quick-add")
                         ForEach((draft.metadata.ingredients ?? []).indices, id: \.self) { index in
                             TextField("Ingredient", text: ingredientBinding(index, \.name))
                             TextField("Amount (optional)", text: ingredientBinding(index, \.amount)).keyboardType(.decimalPad)
@@ -199,6 +209,12 @@ struct CookNoteComposer: View {
             capture.spritzMedium = spritzChoice == .yes && !medium.isEmpty ? medium : nil
         }
         try? store.saveCookInputs(cookId: draft.cookId, dishId: draft.dishId, inputs: capture)
+    }
+    /// #284: Return in the quick-add box appends the typed name and puts
+    /// focus straight back in the box for the next entry.
+    private func quickAddIngredient() {
+        if draft.metadata.appendQuickIngredient(named: quickIngredientName) { quickIngredientName = "" }
+        quickIngredientFocused = true
     }
     private func ingredientBinding(_ index: Int, _ key: WritableKeyPath<NoteIngredient, String>) -> Binding<String> {
         Binding(get: { draft.metadata.ingredients?[index][keyPath: key] ?? "" }, set: { draft.metadata.ingredients?[index][keyPath: key] = $0; draft.metadata.version = 2 })

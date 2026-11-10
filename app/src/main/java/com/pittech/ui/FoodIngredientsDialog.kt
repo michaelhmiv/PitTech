@@ -3,12 +3,16 @@ package com.pittech.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,18 +38,34 @@ import java.util.UUID
     var details by rememberSaveable(selectedId) { mutableStateOf(false) }
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    // #284: the name field is a quick-entry box. Saving (toolbar button or
+    // the keyboard's Done action) files the entry and returns the form to a
+    // fresh quick box with focus back in it — it never dismisses the editor.
+    // Close is the only exit.
+    val nameFocus = remember { FocusRequester() }
+    LaunchedEffect(selectedId) { if (selectedId == null) nameFocus.requestFocus() }
+    fun saveAndReset() {
+        val trimmedName = name.trim()
+        val ingredient = (selected ?: IngredientEntity(UUID.randomUUID().toString(), data.cook.id, dish.id,
+            stage, trimmedName, createdAtUtcMillis = System.currentTimeMillis())).copy(name = trimmedName, stage = stage,
+            brand = brand.trim().ifBlank { null }, amountValue = CookEntryValidation.optionalPositiveNumber(amount), amountText = amount.trim().ifBlank { null },
+            amountUnit = unit.takeIf { amount.isNotBlank() }, notes = notes.trim().ifBlank { null },
+            appliedAtUtcMillis = appliedAt.takeIf { includeTime })
+        viewModel.saveIngredient(ingredient) { saved ->
+            if (saved) {
+                selectedId = null
+                name = ""; stage = "seasoning"; brand = ""; amount = ""; unit = "tbsp"
+                notes = ""; includeTime = false; appliedAt = System.currentTimeMillis(); details = false
+                nameFocus.requestFocus()
+            }
+        }
+    }
+    val entryValid = name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(amount)
     // PL-22 (DD-6): the ingredient editor is an item editor — full screen.
     FullScreenSurface(onDismiss = { if (!busy) onClose() }, title = dish.name + " ingredients", dismissEnabled = !busy,
         actions = {
             TextButton(onClick = onClose, enabled = !busy) { Text("Close") }
-            TextButton(onClick = {
-                val ingredient = (selected ?: IngredientEntity(UUID.randomUUID().toString(), data.cook.id, dish.id,
-                    stage, name, createdAtUtcMillis = System.currentTimeMillis())).copy(name = name, stage = stage,
-                    brand = brand.trim().ifBlank { null }, amountValue = CookEntryValidation.optionalPositiveNumber(amount), amountText = amount.trim().ifBlank { null },
-                    amountUnit = unit.takeIf { amount.isNotBlank() }, notes = notes.trim().ifBlank { null },
-                    appliedAtUtcMillis = appliedAt.takeIf { includeTime })
-                viewModel.saveIngredient(ingredient) { saved -> if (saved) onClose() }
-            }, enabled = !busy && name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(amount),
+            TextButton(onClick = { saveAndReset() }, enabled = !busy && entryValid,
                 modifier = Modifier.testTag("food-ingredient-save")) { Text("Save ingredient") }
         }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -53,7 +73,10 @@ import java.util.UUID
                 TextButton(onClick = { selectedId = ingredient.id }, modifier = Modifier.testTag("ingredient-edit-" + ingredient.id)) { Text(ingredient.name) }
             }
             if (selectedId != null) TextButton(onClick = { selectedId = null }) { Text("Add another ingredient") }
-            OutlinedTextField(name, { name = it }, label = { Text("Ingredient") }, modifier = Modifier.fillMaxWidth().testTag("food-ingredient-name"))
+            OutlinedTextField(name, { name = it }, label = { Text("Ingredient") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { if (!busy && entryValid) saveAndReset() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(nameFocus).testTag("food-ingredient-name"))
             TextButton(onClick = { details = !details }, modifier = Modifier.testTag("food-ingredient-details")) { Text(if (details) "Less detail" else "More detail") }
             if (details) {
                 SimpleDropdownField("Type", stage, listOf("main_ingredient", "seasoning", "sauce", "marinade", "binder", "brine", "glaze", "topping", "injection", "other"), { stage = it })

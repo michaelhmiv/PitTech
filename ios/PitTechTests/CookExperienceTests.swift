@@ -231,4 +231,28 @@ import UIKit
         XCTAssertNil(store.library.cooks.first?.endedAtUtcMillis)
         XCTAssertEqual(store.cookResults(cookId: cook.id, dishId: nil).overallRating, 4)
     }
+    // #284: the composer's quick-add append trims the typed name, rejects
+    // blanks, appends with the standard defaults, and the metadata still
+    // validates and round-trips through its JSON shape.
+    func testQuickIngredientAppendTrimsRejectsBlanksAndKeepsDefaults() {
+        var metadata = CookNoteMetadata()
+        XCTAssertTrue(metadata.appendQuickIngredient(named: "  Kosher salt  "))
+        XCTAssertTrue(metadata.appendQuickIngredient(named: "Black pepper"))
+        XCTAssertFalse(metadata.appendQuickIngredient(named: "   "))
+        XCTAssertFalse(metadata.appendQuickIngredient(named: ""))
+        XCTAssertEqual(metadata.ingredients?.map(\.name), ["Kosher salt", "Black pepper"])
+        XCTAssertEqual(metadata.ingredients?.first?.stage, "main_ingredient")
+        XCTAssertEqual(metadata.ingredients?.first?.unit, "count")
+        XCTAssertEqual(metadata.ingredients?.first?.brand, "")
+        XCTAssertEqual(metadata.ingredients?.first?.amount, "")
+        XCTAssertTrue(metadata.isValid)
+        let decoded = try? JSONDecoder().decode(CookNoteMetadata.self, from: Data(metadata.json.utf8))
+        XCTAssertEqual(decoded?.ingredients?.map(\.name), ["Kosher salt", "Black pepper"])
+    }
+    func testQuickIngredientAppendStopsAtTheValidationCap() {
+        var metadata = CookNoteMetadata()
+        metadata.ingredients = (0..<100).map { NoteIngredient(name: "Item \($0)") }
+        XCTAssertFalse(metadata.appendQuickIngredient(named: "One too many"))
+        XCTAssertEqual(metadata.ingredients?.count, 100)
+    }
 }
