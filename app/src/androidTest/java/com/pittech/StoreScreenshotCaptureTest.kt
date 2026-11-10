@@ -50,19 +50,76 @@ class StoreScreenshotCaptureTest {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.waitForIdleSync()
-        var bitmap: Bitmap? = null
-        var attempts = 0
-        while (bitmap == null && attempts < 10) {
-            bitmap = instrumentation.uiAutomation.takeScreenshot()
-            if (bitmap == null) { attempts++; Thread.sleep(300) }
-        }
-        val shot = bitmap ?: throw AssertionError("Store screenshot '$name' could not be captured: takeScreenshot() returned null after 10 attempts")
         val file = File(instrumentation.targetContext.filesDir, "pittech-ui-test/store-$name.png").apply { parentFile!!.mkdirs() }
-        file.outputStream().use { shot.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        shot.recycle()
+        // UiAutomation can return a STALE frame on this emulator: two
+        // dispatch runs passed every semantics wait yet captured the
+        // "Opening cook..." loader, because SurfaceFlinger's last
+        // composited frame lagged the semantics tree. So judge the
+        // pixels, not the tree: retake until the frame is richer than
+        // a near-uniform loading screen, and fail loudly if it never
+        // is — a bad capture must turn the run red, not ship quietly.
+        var written = false
+        var attempts = 0
+        while (!written && attempts < 10) {
+            attempts++
+            val bitmap: Bitmap? = try { instrumentation.uiAutomation.takeScreenshot() } catch (_: RuntimeException) { null }
+            if (bitmap != null) {
+                if (nonBackgroundFraction(bitmap) > 0.08) {
+                    file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    written = true
+                }
+                bitmap.recycle()
+            }
+            if (!written) Thread.sleep(1_200)
+        }
+        if (!written) throw AssertionError("Store screenshot '$name' stayed on a near-uniform (loading) frame after $attempts attempts")
         // Let charts/animations settle fully before the next navigation so
         // the following capture never catches a transition frame.
         Thread.sleep(1_000)
+    }
+
+    // Fraction of sampled pixels that differ meaningfully from the
+    // top-left (background) pixel. A loading frame is a spinner and
+    // one line of text on a flat background (~1-2%); every real
+    // PitTech screen is cards, bars and type well past 25%.
+    // Sampling runs on a small software copy: UiAutomation bitmaps can
+    // be HARDWARE-config, whose pixels cannot be read directly. Any
+    // analysis failure accepts the frame — the artifact is always
+    // visually verified before handover, so analysis is a filter,
+    // never a single point of failure.
+    private fun nonBackgroundFraction(bitmap: Bitmap): Double {
+        val scaled = try {
+            Bitmap.createScaledBitmap(bitmap, 135, 240, true)
+        } catch (_: Throwable) {
+            return 1.0
+        }
+        return try {
+            val background = scaled.getPixel(0, 0)
+            val bgR = android.graphics.Color.red(background)
+            val bgG = android.graphics.Color.green(background)
+            val bgB = android.graphics.Color.blue(background)
+            var sampled = 0
+            var different = 0
+            var x = 0
+            while (x < scaled.width) {
+                var y = 0
+                while (y < scaled.height) {
+                    val pixel = scaled.getPixel(x, y)
+                    val dr = android.graphics.Color.red(pixel) - bgR
+                    val dg = android.graphics.Color.green(pixel) - bgG
+                    val db = android.graphics.Color.blue(pixel) - bgB
+                    if (dr * dr + dg * dg + db * db > 900) different++
+                    sampled++
+                    y += 4
+                }
+                x += 4
+            }
+            if (sampled == 0) 1.0 else different.toDouble() / sampled
+        } catch (_: Throwable) {
+            1.0
+        } finally {
+            scaled.recycle()
+        }
     }
 
     // Polling wait in the same shape as the other suites' waitUntil
@@ -150,6 +207,11 @@ class StoreScreenshotCaptureTest {
             compose.onNodeWithText("Flowing brisket").performClick()
             awaitTrue(15_000) { compose.onAllNodesWithTag("live-verdict-headline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithTag("live-eta-range", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            // The board's nodes exist in the tree while the "Opening
+            // cook..." gate still covers the screen — semantics waits
+            // alone let the main dispatch (2026-11-10) capture the
+            // loading frame. Capture only once the gate has lifted.
+            awaitTrue(15_000) { compose.onAllNodesWithText("Opening cook", substring = true).fetchSemanticsNodes().isEmpty() }
             capture("live-board")
 
             // 3 — Cook Timeline: the same cook's story — milestones,
@@ -170,6 +232,7 @@ class StoreScreenshotCaptureTest {
             Espresso.pressBack()
             awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("cook-card-$ghost").performScrollTo().performClick()
+            awaitTrue(15_000) { compose.onAllNodesWithText("Opening cook", substring = true).fetchSemanticsNodes().isEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithTag("timeline-list", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
