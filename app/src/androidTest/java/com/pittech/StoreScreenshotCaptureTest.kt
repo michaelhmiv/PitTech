@@ -50,19 +50,60 @@ class StoreScreenshotCaptureTest {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.waitForIdleSync()
-        var bitmap: Bitmap? = null
-        var attempts = 0
-        while (bitmap == null && attempts < 10) {
-            bitmap = instrumentation.uiAutomation.takeScreenshot()
-            if (bitmap == null) { attempts++; Thread.sleep(300) }
-        }
-        val shot = bitmap ?: throw AssertionError("Store screenshot '$name' could not be captured: takeScreenshot() returned null after 10 attempts")
         val file = File(instrumentation.targetContext.filesDir, "pittech-ui-test/store-$name.png").apply { parentFile!!.mkdirs() }
-        file.outputStream().use { shot.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        shot.recycle()
+        // UiAutomation can return a STALE frame on this emulator: two
+        // dispatch runs passed every semantics wait yet captured the
+        // "Opening cook..." loader, because SurfaceFlinger's last
+        // composited frame lagged the semantics tree. So judge the
+        // pixels, not the tree: retake until the frame is richer than
+        // a near-uniform loading screen, and fail loudly if it never
+        // is — a bad capture must turn the run red, not ship quietly.
+        var written = false
+        var attempts = 0
+        while (!written && attempts < 10) {
+            attempts++
+            val bitmap: Bitmap? = try { instrumentation.uiAutomation.takeScreenshot() } catch (_: RuntimeException) { null }
+            if (bitmap != null) {
+                if (nonBackgroundFraction(bitmap) > 0.08) {
+                    file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    written = true
+                }
+                bitmap.recycle()
+            }
+            if (!written) Thread.sleep(1_200)
+        }
+        if (!written) throw AssertionError("Store screenshot '$name' stayed on a near-uniform (loading) frame after $attempts attempts")
         // Let charts/animations settle fully before the next navigation so
         // the following capture never catches a transition frame.
         Thread.sleep(1_000)
+    }
+
+    // Fraction of sampled pixels that differ meaningfully from the
+    // top-left (background) pixel. A loading frame is a spinner and
+    // one line of text on a flat background (~1-2%); every real
+    // PitTech screen is cards, bars and type well past 25%.
+    private fun nonBackgroundFraction(bitmap: Bitmap): Double {
+        val background = bitmap.getPixel(0, 0)
+        val bgR = android.graphics.Color.red(background)
+        val bgG = android.graphics.Color.green(background)
+        val bgB = android.graphics.Color.blue(background)
+        var sampled = 0
+        var different = 0
+        var x = 0
+        while (x < bitmap.width) {
+            var y = 0
+            while (y < bitmap.height) {
+                val pixel = bitmap.getPixel(x, y)
+                val dr = android.graphics.Color.red(pixel) - bgR
+                val dg = android.graphics.Color.green(pixel) - bgG
+                val db = android.graphics.Color.blue(pixel) - bgB
+                if (dr * dr + dg * dg + db * db > 900) different++
+                sampled++
+                y += 16
+            }
+            x += 16
+        }
+        return if (sampled == 0) 0.0 else different.toDouble() / sampled
     }
 
     // Polling wait in the same shape as the other suites' waitUntil
