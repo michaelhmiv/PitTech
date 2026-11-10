@@ -1,3 +1,42 @@
+## November 10, 2026 — environment law and production stand-up (R5 executing)
+
+Owner ruling (November 10, 2026): **STAGING is the disposable test
+bench** — Firebase/dev builds, the sim fleet, the MCP lab and
+`BETA_ALL_ACCESS`. **PRODUCTION is where approved work lives** —
+every store-distributed build (TestFlight, Play tracks) targets the
+production backend. Firebase stays on staging.
+
+A production gap audit the same day discovered that production had
+never been stood up: `api.pittech.app` did not resolve (NXDOMAIN)
+and the production Railway project held only the Privacy and
+Feedback Relay services — no production API, Postgres or bucket.
+Slice R5 (production stand-up, `20-online-enablement.md`) is now
+**executing**, with **subscriptions included in the first cut** —
+the owner's explicit ruling, overriding the audit's recommendation
+to stand production up with subscriptions off. Production MCP
+stays off.
+
+This supersedes the framing below that the physical-device
+walkthrough is the one open leg: the R5 production stand-up was
+entirely unexecuted and appeared in no ledger as open work until
+this entry.
+
+Recent state this file previously did not record:
+
+- **November 8, 2026:** `BETA_ALL_ACCESS` shipped staging-only
+  (PR #282) — every signed-in staging account reads as Pro; the
+  switch refuses to boot outside staging and must be off before any
+  public launch selling Pro.
+- **November 9, 2026:** the iOS online-flag flip (PR #306, alongside
+  PR #307) — iOS store builds now ship with online entry enabled,
+  matching Android.
+- **November 10, 2026:** TestFlight build 687 is live in open beta
+  targeting the production profile. Its online features pointed at
+  a production backend that did not exist — the discovery above.
+  The Play lane built every track with online off; the lane now
+  passes `-PpittechOnlineEnabled=true` for all tracks, and the Play
+  open-testing release follows that fix.
+
 ## October 22 staging activation — COMPLETE
 
 Controlled activation of the isolated staging stack ran end to end on
@@ -34,6 +73,9 @@ Live evidence, not just green CI:
   (TestFlight install, SIWA + Google sign-in on hardware, cross-device
   sync with real photos, Apple sandbox + Play license-tester purchase
   lifecycle) is the one open leg and requires an iOS 17+ device.
+  (Superseded November 10, 2026: the device walkthrough is no longer
+  the one open leg — the R5 production stand-up is executing; see the
+  November 10, 2026 section at the top of this file.)
 
 MCP #114 stays planned; its sequencing prerequisite (the live online
 stack) is now satisfied. See [STAGING.md](STAGING.md),
@@ -41,6 +83,16 @@ stack) is now satisfied. See [STAGING.md](STAGING.md),
 [22-operations-runbooks.md](22-operations-runbooks.md).
 
 ## October 21 online rollout checkpoint
+
+> **Superseded October 22, 2026:** this checkpoint is a historical
+> record of the day before staging activation. Its statements that
+> all four staging email DNS records are absent, that no staging
+> sending key is installed, that all online flags remain false and
+> that staging mail and deployment reconciliation wait on Railway's
+> platform incident were all resolved the next day (records added
+> via the Railway API, domain verified, key installed, delivery
+> proven, all seven flags on — see the October 22 section above).
+> Do not read it as current state.
 
 PR #124 merged at `9a97216` (2026-10-21 02:08 UTC). Its candidate `9ee2e2d`
 passed all six exact-head workflows: backend/container checks (181 tests, no
@@ -78,7 +130,7 @@ Baseline: `82cbe1b335499aba561fc58c91d727055b8ce4fc`. Store-launch PRs #77/#78/#
 remain separate. No online phase is released until its complete parity gate passes.
 Slices 00–19 and cleanup #122 are merged; main `743b6a5` carries the tested
 cleanup tree (backend 170, Android JVM 376/all emulator lanes, iOS 250 unit/UI).
-The isolated staging foundation is deployed; online features remain disabled. Owner authorization on
+The isolated staging foundation is deployed; online features were disabled at this checkpoint and were activated on staging on October 22, 2026 with all seven flags on (see the October 22 section above; the November 10, 2026 section records the production stand-up that followed). Owner authorization on
 October 20 now covers making it usable and a Firebase test distribution; the
 remaining rollout is tracked in #123 and `20-online-enablement.md`.
 Historical checkpoints below are source evidence, not a live-service claim.
@@ -95,9 +147,10 @@ clients created in GCP project `pittech-529a1`. The Play `pittech.pro.monthly`
 draft now exists (created after the "Manage store presence" grant; DRAFT, US $3)
 and Play RTDN is wired console-side with a successful test notification; the
 Apple draft remains MISSING_METADATA (the App Review screenshot was never
-uploaded — it gates submission, not sandbox testing). Staging mail and deployment reconciliation wait on
-Railway's platform incident — the API is unavailable while staging itself stays
-live and fail-closed.
+uploaded — it gates submission, not sandbox testing). Staging mail and deployment reconciliation waited on
+Railway's platform incident at this checkpoint (superseded October 22, 2026:
+the incident cleared, staging mail was completed and the staging stack was
+activated — see the October 22 section above).
 
 | PR | Deliverable | State | Evidence |
 |---|---|---|---|
@@ -109,7 +162,7 @@ live and fail-closed.
 | 05 | Native share cards | Merged (PR #101) | Both native renderers and data tests pass; iOS and Android exported pixels reviewed at `ceefb36`. Required Android API 36 font 1.15/1.5 lanes pass at `e53192b`; latest head `09de238`: Android run 38739985070 passes; iOS run 38739985175 remains in progress |
 | 06 | API/relay | Merged (PR #102) | Node 22 TypeScript relay, private storage adapters, migration, bounded validation/canonicalization, 64-bit codes, independent hashed owner capabilities, durable quotas/cleanup and native canonical fixture consumers. Backend Actions run 38723450831 passes at `ed79b04`: 23 tests pass, zero skips, including real Postgres 16; strict typecheck, runtime audit, canonical fixture comparison, Docker build, six actual native packs in the production image and fail-closed startup all pass. At latest head `dd2b19d`, Android run 38739989368 and backend run 38739989385 pass; complete iOS run 38739989420 passes (66 tests, zero failures/skips). Separate staging resources are prepared but remain unapplied; see STAGING.md |
 | 07 | Code/link import | Merged (PR #103) | Native explicit upload/import, secure device-only ownership, retry/cancel, code/link/QR and privacy-limited web fallback implemented. Backend Actions passes at `cfb06b0` (run 38742658407); 64 iOS unit tests, including five relay tests, passed in the preceding run before a newer commit canceled UI execution. At `cfb06b0`, both required Android API 36 lanes pass (run 38742657873); advisory API 37 has a system crash in telemetry. iOS run 38742657769 passes 71/72 tests; the new large-text import test could not reach the keyboard-covered action. Keyboard submission/focus handling and modal-scroll geometry are corrected in follow-up Actions; installed-link/staging evidence remains pending |
-| 08 | Resend and backend auth | Merged (PR #104) | Backend Actions 38744834515 passes at `1572488`: 29 tests, zero skips, real Postgres 16, runtime role isolation and Docker checks. Optional proof-bound 15-minute code/link challenges, leased Resend outbox, rotating sessions and narrow runtime roles. Auth disabled by default. `auth.pittech.app` and all four DNS records verified; no mail sent or old keys retired. At `e0b9df6`, Android required lanes pass and iOS summary 229 reports 72/72 passing, zero failures/skips (workflow screenshot stage separate). Native account flows are in draft #105; delivery/operational verification pending |
+| 08 | Resend and backend auth | Merged (PR #104) | Backend Actions 38744834515 passes at `1572488`: 29 tests, zero skips, real Postgres 16, runtime role isolation and Docker checks. Optional proof-bound 15-minute code/link challenges, leased Resend outbox, rotating sessions and narrow runtime roles. Auth disabled by default. `auth.pittech.app` and all four DNS records verified; no mail sent or old keys retired. At `e0b9df6`, Android required lanes pass and iOS summary 229 reports 72/72 passing, zero failures/skips (workflow screenshot stage separate). Native account flows are in draft #105; delivery/operational verification pending (superseded October 22, 2026: auth is enabled on staging and delivery/operational verification was proven live during activation — see the October 22 section above) |
 | 09 | Native account flow | Merged (PR #105) | Both native account forms, proof-bound exchange, device-only vaults, interrupted-request recovery, serialized refresh and offline sign-out remain disabled until Phase 2. At `048705f`, complete iOS Actions 38770804764 passes 83/83 tests, zero failures/skips, and required Android API 36 lanes pass in 38770804862. Installed links, actual delivery and operational release gates remain open; see 09-native-accounts.md |
 | 10 | Public data/API | Merged (PR #106) | Isolated public schema, immutable publication/media validation, explicit fork ownership, profiles/likes/discovery and durable quotas; disabled by default. Backend Actions 38756433348 passes at `b2c8068`: 33/33 tests, zero skips, real Postgres 16 and production Docker checks. Native follow-up UI control targeting is pending; see 10-public-api.md |
 | 11 | Discovery/save/cook | Merged (PR #107) | Native signed-out discovery, public caches, exact-revision selected save/cook and pinned credit. Backend Actions passes at `0efffe2`; native compilation passes. Fixed missing telemetry environment on the new-meal sheet and the Android test attempting to scroll a fixed confirmation footer. Latest `d9a6309` also clears owned DEBUG fixture photos between text-size launches; runtime results and visual review pending; see 11-discovery.md |

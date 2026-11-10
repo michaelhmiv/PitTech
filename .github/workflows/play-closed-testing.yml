@@ -150,7 +150,7 @@ jobs:
       - name: Run unit tests
         env:
           PITTECH_LIVE_ADS: ${{ inputs.release_track == 'production' || inputs.release_track == 'beta' }}
-        run: gradle --no-daemon testDebugUnitTest -PpittechLiveAds=${PITTECH_LIVE_ADS}
+        run: gradle --no-daemon testDebugUnitTest -PpittechLiveAds=${PITTECH_LIVE_ADS} -PpittechOnlineEnabled=true
 
       - name: Build release bundle with the track's ad unit
         env:
@@ -158,6 +158,7 @@ jobs:
         run: >-
           gradle --no-daemon bundleRelease
           -PpittechLiveAds=${PITTECH_LIVE_ADS}
+          -PpittechOnlineEnabled=true
           -PpittechVersionCode=${{ steps.version.outputs.code }}
           -PpittechVersionName=${{ steps.version.outputs.name }}
 
