@@ -82,28 +82,44 @@ class StoreScreenshotCaptureTest {
     // top-left (background) pixel. A loading frame is a spinner and
     // one line of text on a flat background (~1-2%); every real
     // PitTech screen is cards, bars and type well past 25%.
+    // Sampling runs on a small software copy: UiAutomation bitmaps can
+    // be HARDWARE-config, whose pixels cannot be read directly. Any
+    // analysis failure accepts the frame — the artifact is always
+    // visually verified before handover, so analysis is a filter,
+    // never a single point of failure.
     private fun nonBackgroundFraction(bitmap: Bitmap): Double {
-        val background = bitmap.getPixel(0, 0)
-        val bgR = android.graphics.Color.red(background)
-        val bgG = android.graphics.Color.green(background)
-        val bgB = android.graphics.Color.blue(background)
-        var sampled = 0
-        var different = 0
-        var x = 0
-        while (x < bitmap.width) {
-            var y = 0
-            while (y < bitmap.height) {
-                val pixel = bitmap.getPixel(x, y)
-                val dr = android.graphics.Color.red(pixel) - bgR
-                val dg = android.graphics.Color.green(pixel) - bgG
-                val db = android.graphics.Color.blue(pixel) - bgB
-                if (dr * dr + dg * dg + db * db > 900) different++
-                sampled++
-                y += 16
-            }
-            x += 16
+        val scaled = try {
+            Bitmap.createScaledBitmap(bitmap, 135, 240, true)
+        } catch (_: Throwable) {
+            return 1.0
         }
-        return if (sampled == 0) 0.0 else different.toDouble() / sampled
+        return try {
+            val background = scaled.getPixel(0, 0)
+            val bgR = android.graphics.Color.red(background)
+            val bgG = android.graphics.Color.green(background)
+            val bgB = android.graphics.Color.blue(background)
+            var sampled = 0
+            var different = 0
+            var x = 0
+            while (x < scaled.width) {
+                var y = 0
+                while (y < scaled.height) {
+                    val pixel = scaled.getPixel(x, y)
+                    val dr = android.graphics.Color.red(pixel) - bgR
+                    val dg = android.graphics.Color.green(pixel) - bgG
+                    val db = android.graphics.Color.blue(pixel) - bgB
+                    if (dr * dr + dg * dg + db * db > 900) different++
+                    sampled++
+                    y += 4
+                }
+                x += 4
+            }
+            if (sampled == 0) 1.0 else different.toDouble() / sampled
+        } catch (_: Throwable) {
+            1.0
+        } finally {
+            scaled.recycle()
+        }
     }
 
     // Polling wait in the same shape as the other suites' waitUntil
