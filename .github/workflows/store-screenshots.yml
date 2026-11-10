@@ -1,0 +1,91 @@
+# Captures store / landing-page screenshots of the real Android app on a
+# clean API 36 emulator (Meals home, Live Board, Cook Timeline, and a
+# finished cook's record), seeded with the proven FlowingLiveScreenTest
+# brisket board. The workflow is manual (workflow_dispatch): the suite
+# guard in scripts/run-emulator-ui-tests.sh runs explicit class selectors
+# with fixed counts, so the capture test (StoreScreenshotCaptureTest) is
+# deliberately not part of android-build — it runs only here, and the
+# PNGs land in the pittech-store-screenshots artifact.
+name: Store screenshots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture-store-screenshots:
+    name: Capture store screenshots (API 36 emulator)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android SDK and clean emulator image
+        run: |
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$sdk_root" ]]; then
+            echo "ANDROID_SDK_ROOT or ANDROID_HOME must point to the Android SDK." >&2
+            exit 1
+          fi
+          image="system-images;android-36;google_apis;x86_64"
+          image_dir="$sdk_root/system-images/android-36/google_apis/x86_64"
+          verify_image() {
+            [[ -f "$image_dir/system.img" ]] || return 1
+            if [[ -f "$image_dir/devices.xml" ]]; then
+              python3 -c 'import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])' "$image_dir/devices.xml" || return 1
+            fi
+            return 0
+          }
+          for attempt in 1 2 3; do
+            # Same rule as android-build: never trust the runner image's
+            # preinstalled system image (a corrupt devices.xml shipped in
+            # the 20261101.360.1 ubuntu-24.04 image). Delete it, install
+            # fresh, and verify before the emulator ever sees it.
+            rm -rf "$image_dir"
+            if sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "$image" "emulator" && verify_image; then
+              echo "Installed and verified a clean emulator image on attempt $attempt:"
+              cat "$image_dir/source.properties" || true
+              exit 0
+            fi
+            echo "SDK install or image verification failed on attempt $attempt; retrying with a fresh image."
+          done
+          exit 1
+
+      - name: Set up Gradle 9.6.1
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '9.6.1'
+
+      - name: Build debug and instrumented apps
+        run: gradle assembleDebug assembleDebugAndroidTest
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+
+      - name: Capture the store screenshots
+        run: bash scripts/capture-store-screenshots.sh
+
+      - name: Upload the store screenshots
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-store-screenshots
+          path: app/build/store-screenshots/**
+          if-no-files-found: warn
+          retention-days: 30
