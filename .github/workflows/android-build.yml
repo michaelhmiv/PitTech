@@ -20,8 +20,9 @@ jobs:
     # Anti-hang protection lives in the per-phase emulator step budgets
     # below (each smaller than the old single 45-minute cliff, so a hang
     # fails in its own phase with attribution). This job value is only a
-    # backstop covering the Gradle builds plus the sum of the phase budgets.
-    timeout-minutes: 150
+    # backstop covering the Gradle builds plus the sum of the phase budgets
+    # (25 + 30 + 35 + 30 + 15 + 15 = 150, plus build/install time).
+    timeout-minutes: 170
     # Keep Android 17 emulator results advisory while its system graphics stack is unstable.
     continue-on-error: ${{ matrix.api == 37 }}
     strategy:
@@ -133,24 +134,35 @@ jobs:
       # The emulator phases run as separate steps of this job, sharing one
       # emulator started (detached) by the boot phase. Each phase has its own
       # budget below the old single 45-minute cliff; same script, same tests.
+      # 25 minutes fits the boot script's own design: two attempts, each up
+      # to a 240s device wait plus the 7-minute boot deadline (~11 minutes
+      # with AVD creation). At 20 the second attempt could be cut mid-boot.
       - name: Boot emulator
-        timeout-minutes: 20
+        timeout-minutes: 25
         env:
           PITTECH_API_LEVEL: ${{ matrix.api }}
           PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
           PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
         run: bash scripts/run-emulator-ui-tests.sh boot
 
+      # 30 minutes covers the telemetry restart's 600s staged deadline
+      # (raised from 300s after the font-1.5 lane missed it at the
+      # foreground-service stage) alongside the phase's 12m-wrapped runs.
       - name: Run upgrade and process-death phases
-        timeout-minutes: 25
+        timeout-minutes: 30
         env:
           PITTECH_API_LEVEL: ${{ matrix.api }}
           PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
           PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
         run: bash scripts/run-emulator-ui-tests.sh upgrade
 
+      # 35 minutes: the green font-1.15 lane runs this phase's content in
+      # ~17.5 minutes, and the slower font-1.5 draws inflate it ~1.35x
+      # (chunk timings, PR #310), projecting a passing slow run at ~24
+      # minutes before the finer companion chunking added three more
+      # instrumentation launches. 25 left no headroom for a slow pass.
       - name: Run data and integration suites
-        timeout-minutes: 25
+        timeout-minutes: 35
         env:
           PITTECH_API_LEVEL: ${{ matrix.api }}
           PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}

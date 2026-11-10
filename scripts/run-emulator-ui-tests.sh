@@ -512,8 +512,12 @@ timeout 10 adb shell run-as com.pittech.debug kill -9 "$old_telemetry_pid"
 # Staged restart evidence: system restart latency is unbounded, but the 15s
 # sampling cadence is not - the receipt window starts once the service is
 # confirmed up, so every stage shares one wall-clock deadline and exits early.
+# The deadline is 600s, not the original 300s: on the current runner image
+# the font-1.5 lane's restart came back with a new PID but its foreground
+# service had still not promoted when 300s ran out (push 69f4119, run
+# 42837405480), while every stage assertion below is unchanged.
 restart_start=$SECONDS
-restart_deadline=$((restart_start + 300))
+restart_deadline=$((restart_start + 600))
 new_telemetry_pid=""
 restored_receipt=""
 last_receipt_seen=""
@@ -682,43 +686,91 @@ timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/andr
 # not reliably finish inside the suite's 8-minute wrapper on the current
 # runner image's slower emulator draws — lanes died mid-suite with every
 # test so far passing (issue #296) — while the 25–50-test suites around it
-# fit comfortably. The selector therefore runs as three sequential chunks
+# fit comfortably. The selector therefore runs as sequential chunks
 # in its original class order, each inside the same 8-minute wrapper the
 # 50-test recipe suite above uses. The chunks are disjoint, no class is
 # split, and their expected counts sum to the suite's 102 (guarded
 # below); each chunk must report its full count or the phase fails,
 # exactly as the single invocation did.
+#
+# The original three chunks (33/37/32) still lost individual tests on the
+# font-1.5 lane to compose idle timeouts inside each long session —
+# ComposeTimeoutException, "No compose hierarchies", semantics fetch
+# failures. PR #310's two attempts lost 3 and then 4 of chunk 1's 33; the
+# 206189d push lost 3 of chunk 1 and the 57ff45a push lost 1 of chunk 3,
+# with the same heavy screen classes recurring. The chunks are therefore
+# six (~13–20 tests each), and the app process is force-stopped before
+# every chunk: each chunk starts from a cold app process instead of
+# inheriting the process state accumulated by the hundred-plus tests
+# that ran before it. App data is untouched — a force-stop kills the
+# process only, exactly as the upgrade phase's force-stops already do.
 companion_expected_total=0
 
 companion_1_test_output="$output_dir/companion-tests-1.txt"
-companion_1_expected_count=33
-echo "Running cook playbook persistence and archive tests (companion chunk 1 of 3: ${companion_1_expected_count} tests)."
+companion_1_expected_count=14
+echo "Running cook playbook persistence and archive tests (companion chunk 1 of 6: ${companion_1_expected_count} tests)."
+timeout 20 adb shell am force-stop com.pittech.debug
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest' \
+  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest' \
   "$instrumentation_target" | tee "$companion_1_test_output"
 grep -q "OK (${companion_1_expected_count} tests)" "$companion_1_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_1_test_output"
 companion_expected_total=$((companion_expected_total + companion_1_expected_count))
 
 companion_2_test_output="$output_dir/companion-tests-2.txt"
-companion_2_expected_count=37
-echo "Running cook playbook persistence and archive tests (companion chunk 2 of 3: ${companion_2_expected_count} tests)."
+companion_2_expected_count=19
+echo "Running cook playbook persistence and archive tests (companion chunk 2 of 6: ${companion_2_expected_count} tests)."
+timeout 20 adb shell am force-stop com.pittech.debug
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest,com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest,com.pittech.CommunityBenchmarksTest' \
+  -e class 'com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest' \
   "$instrumentation_target" | tee "$companion_2_test_output"
 grep -q "OK (${companion_2_expected_count} tests)" "$companion_2_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_2_test_output"
 companion_expected_total=$((companion_expected_total + companion_2_expected_count))
 
 companion_3_test_output="$output_dir/companion-tests-3.txt"
-companion_3_expected_count=32
-echo "Running cook playbook persistence and archive tests (companion chunk 3 of 3: ${companion_3_expected_count} tests)."
+companion_3_expected_count=17
+echo "Running cook playbook persistence and archive tests (companion chunk 3 of 6: ${companion_3_expected_count} tests)."
+timeout 20 adb shell am force-stop com.pittech.debug
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.CommunityBenchmarksFlowTest,com.pittech.ProPersonalTest,com.pittech.ProPersonalFlowTest,com.pittech.WelcomeFlowTest,com.pittech.FlowingLiveScreenTest,com.pittech.FlowingStoryScreenTest,com.pittech.FlowingPlanBoardScreenTest,com.pittech.FlowingHappyPathFlowTest' \
+  -e class 'com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest' \
   "$instrumentation_target" | tee "$companion_3_test_output"
 grep -q "OK (${companion_3_expected_count} tests)" "$companion_3_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_3_test_output"
 companion_expected_total=$((companion_expected_total + companion_3_expected_count))
+
+companion_4_test_output="$output_dir/companion-tests-4.txt"
+companion_4_expected_count=20
+echo "Running cook playbook persistence and archive tests (companion chunk 4 of 6: ${companion_4_expected_count} tests)."
+timeout 20 adb shell am force-stop com.pittech.debug
+timeout 8m adb shell am instrument -w -r \
+  -e class 'com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest,com.pittech.CommunityBenchmarksTest' \
+  "$instrumentation_target" | tee "$companion_4_test_output"
+grep -q "OK (${companion_4_expected_count} tests)" "$companion_4_test_output"
+! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_4_test_output"
+companion_expected_total=$((companion_expected_total + companion_4_expected_count))
+
+companion_5_test_output="$output_dir/companion-tests-5.txt"
+companion_5_expected_count=13
+echo "Running cook playbook persistence and archive tests (companion chunk 5 of 6: ${companion_5_expected_count} tests)."
+timeout 20 adb shell am force-stop com.pittech.debug
+timeout 8m adb shell am instrument -w -r \
+  -e class 'com.pittech.CommunityBenchmarksFlowTest,com.pittech.ProPersonalTest' \
+  "$instrumentation_target" | tee "$companion_5_test_output"
+grep -q "OK (${companion_5_expected_count} tests)" "$companion_5_test_output"
+! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_5_test_output"
+companion_expected_total=$((companion_expected_total + companion_5_expected_count))
+
+companion_6_test_output="$output_dir/companion-tests-6.txt"
+companion_6_expected_count=19
+echo "Running cook playbook persistence and archive tests (companion chunk 6 of 6: ${companion_6_expected_count} tests)."
+timeout 20 adb shell am force-stop com.pittech.debug
+timeout 8m adb shell am instrument -w -r \
+  -e class 'com.pittech.ProPersonalFlowTest,com.pittech.WelcomeFlowTest,com.pittech.FlowingLiveScreenTest,com.pittech.FlowingStoryScreenTest,com.pittech.FlowingPlanBoardScreenTest,com.pittech.FlowingHappyPathFlowTest' \
+  "$instrumentation_target" | tee "$companion_6_test_output"
+grep -q "OK (${companion_6_expected_count} tests)" "$companion_6_test_output"
+! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_6_test_output"
+companion_expected_total=$((companion_expected_total + companion_6_expected_count))
 
 if [[ "$companion_expected_total" -ne 102 ]]; then
   echo "Companion chunk expected counts sum to ${companion_expected_total}, not the suite's 102 tests." >&2
