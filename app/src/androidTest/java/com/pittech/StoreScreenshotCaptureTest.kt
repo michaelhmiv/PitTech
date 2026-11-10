@@ -150,6 +150,11 @@ class StoreScreenshotCaptureTest {
             compose.onNodeWithText("Flowing brisket").performClick()
             awaitTrue(15_000) { compose.onAllNodesWithTag("live-verdict-headline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithTag("live-eta-range", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            // The board's nodes exist in the tree while the "Opening
+            // cook..." gate still covers the screen — semantics waits
+            // alone let the main dispatch (2026-11-10) capture the
+            // loading frame. Capture only once the gate has lifted.
+            awaitTrue(15_000) { compose.onAllNodesWithText("Opening cook", substring = true).fetchSemanticsNodes().isEmpty() }
             capture("live-board")
 
             // 3 — Cook Timeline: the same cook's story — milestones,
@@ -170,6 +175,7 @@ class StoreScreenshotCaptureTest {
             Espresso.pressBack()
             awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("cook-card-$ghost").performScrollTo().performClick()
+            awaitTrue(15_000) { compose.onAllNodesWithText("Opening cook", substring = true).fetchSemanticsNodes().isEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithTag("timeline-list", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             awaitTrue(15_000) { compose.onAllNodesWithText("Last brisket").fetchSemanticsNodes().isNotEmpty() }
