@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { randomUUID,randomBytes } from 'node:crypto';
 import { deletionPage, operatorPage } from './lifecycle-web.ts';
 import { emberLogoPng } from './brand-web.ts';
+import { landingPage, landingAsset } from './landing-web.ts';
 import { createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, rm, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -64,6 +65,16 @@ export function makeServer(relay: Relay, options: Options) {
       if (method === 'GET' && req.url === '/brand/ember-logo.png') {
         route = '/brand/ember-logo.png'; res.statusCode = 200; res.setHeader('Content-Type', 'image/png');
         res.setHeader('Cache-Control', 'public, max-age=86400'); res.end(emberLogoPng()); return;
+      }
+      if (method === 'GET' && req.url === '/') {
+        route = '/'; res.statusCode = 200; res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+        res.setHeader('Cache-Control', 'public, max-age=300'); res.end(landingPage()); return;
+      }
+      const staticAsset = method === 'GET' ? landingAsset(req.url ?? '') : undefined;
+      if (staticAsset) {
+        route = req.url!; res.statusCode = 200; res.setHeader('Content-Type', staticAsset.contentType);
+        res.setHeader('Cache-Control', 'public, max-age=86400'); res.end(staticAsset.body); return;
       }
       if (method === 'GET' && req.url === '/auth') {
         route = '/auth'; res.setHeader('Content-Type', 'text/html; charset=utf-8');

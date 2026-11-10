@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PitTech — The Log</title>
+<meta name="description" content="Open-source BBQ cooking companion. Now in open beta. If it happened at the pit, it's in the log.">
+<style>
+@font-face{font-family:'Oswald';src:url('/assets/fonts/oswald-500.ttf') format('truetype');font-weight:500;font-display:swap}
+@font-face{font-family:'Oswald';src:url('/assets/fonts/oswald-600.ttf') format('truetype');font-weight:600;font-display:swap}
+@font-face{font-family:'Oswald';src:url('/assets/fonts/oswald-700.ttf') format('truetype');font-weight:700;font-display:swap}
+@font-face{font-family:'Barlow';src:url('/assets/fonts/barlow-400.ttf') format('truetype');font-weight:400;font-display:swap}
+@font-face{font-family:'Barlow';src:url('/assets/fonts/barlow-500.ttf') format('truetype');font-weight:500;font-display:swap}
+@font-face{font-family:'Barlow';src:url('/assets/fonts/barlow-600.ttf') format('truetype');font-weight:600;font-display:swap}
+@font-face{font-family:'Barlow';src:url('/assets/fonts/barlow-700.ttf') format('truetype');font-weight:700;font-display:swap}
+@font-face{font-family:'Barlow';src:url('/assets/fonts/barlow-800.ttf') format('truetype');font-weight:800;font-display:swap}
+@font-face{font-family:'IBM Plex Mono';src:url('/assets/fonts/ibm-plex-mono-400.ttf') format('truetype');font-weight:400;font-display:swap}
+@font-face{font-family:'IBM Plex Mono';src:url('/assets/fonts/ibm-plex-mono-500.ttf') format('truetype');font-weight:500;font-display:swap}
+@font-face{font-family:'IBM Plex Mono';src:url('/assets/fonts/ibm-plex-mono-600.ttf') format('truetype');font-weight:600;font-display:swap}
+
+:root{
+  --bg:#15110c;
+  --panel:#211a12;
+  --panel-2:#292118;
+  --ink:#f5efe2;
+  --ink-2:#d3c6ab;
+  --ink-3:#b3a487;
+  --ember:#ff7d1f;
+  --ember-hi:#ffa03d;
+  --btn-ink:#241300;
+  --line:#453a29;
+  --good:#93cf63;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Barlow',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+::selection{background:var(--ember);color:var(--btn-ink)}
+a{color:var(--ember-hi)}
+a:focus-visible{outline:3px solid var(--ember-hi);outline-offset:3px;border-radius:6px}
+img{display:block;max-width:100%}
+h1,h2{font-family:'Oswald',sans-serif;text-transform:uppercase;line-height:1.05;text-wrap:balance}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+.stores{display:flex;flex-wrap:wrap;gap:14px}
+.btn-store{display:flex;align-items:center;gap:14px;flex:0 0 auto;width:400px;max-width:100%;height:64px;padding:12px 22px 12px 14px;background:var(--ember);color:var(--btn-ink);border-radius:14px;text-decoration:none;box-shadow:0 10px 24px rgba(0,0,0,.45);transition:transform .18s ease-out,background .18s ease-out}
+.btn-store:hover{background:var(--ember-hi);transform:translateY(-2px)}
+.btn-store img{width:40px;height:40px;border-radius:9px}
+.btn-store .os{display:block;font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.btn-store .go{display:block;font-family:'Oswald',sans-serif;font-size:21px;font-weight:600;line-height:1.15;text-transform:uppercase}
+.btn-store.ghost{background:#0d0b08;color:var(--ink);border:1px solid var(--line);box-shadow:none}
+.btn-store.ghost:hover{border-color:var(--ember);background:#171208}
+
+/* ---------- masthead ---------- */
+.masthead{padding:54px 0 10px;text-align:left}
+.brand{display:flex;align-items:center;gap:16px}
+.brand img{width:62px;height:62px;border-radius:14px}
+.brand .name{font-family:'Oswald',sans-serif;font-size:31px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.masthead h1{font-size:clamp(42px,7.4vw,84px);font-weight:700;letter-spacing:-.01em;margin-top:40px;max-width:14ch}
+.masthead h1 .heat{color:var(--ember)}
+.masthead .promise{margin-top:18px;font-size:19.5px;color:var(--ink-2);max-width:58ch;line-height:1.6}
+.masthead .stores{margin-top:30px}
+.masthead .bio{margin-top:20px;font-size:15.5px;color:var(--ink-3)}
+.log-intro{margin-top:54px;display:flex;align-items:center;gap:14px;color:var(--ink-3)}
+.log-intro .rule{flex:1;height:1px;background:var(--line)}
+.log-intro span{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+
+/* ---------- the log ---------- */
+.log{position:relative;padding:30px 0 20px}
+.log::before{content:"";position:absolute;top:0;bottom:0;left:27px;width:2px;background:var(--line)}
+.entry{position:relative;padding:34px 0 34px 76px}
+.entry .node{
+  position:absolute;left:20px;top:44px;width:16px;height:16px;border-radius:50%;
+  background:var(--bg);border:3px solid var(--ember);z-index:1;
+}
+.entry .node.major{background:var(--ember)}
+.entry time{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15.5px;color:var(--ember-hi);letter-spacing:.02em}
+.entry .kind{font-size:12px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-left:12px}
+.entry h2{font-size:clamp(27px,3.8vw,40px);font-weight:600;margin-top:8px;max-width:22ch}
+.entry h2.minor{font-family:'Barlow',sans-serif;font-size:22px;font-weight:700;margin-top:6px;text-transform:none;letter-spacing:0}
+.entry p.body{margin-top:10px;color:var(--ink-2);font-size:17.5px;max-width:60ch}
+.entry .attach{margin-top:24px}
+.entry .data-strip{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.entry .data-strip .cell{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 16px}
+.entry .data-strip .cell .v{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:21px}
+.entry .data-strip .cell .v small{font-size:12px;color:var(--ink-3)}
+.entry .data-strip .cell .k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.entry.turn-in{background:#221407;border:1px solid #7a4a17;border-radius:22px;padding:40px 34px 42px 76px;margin:30px 0 60px}
+.entry.turn-in .node{left:44px;top:52px}
+.entry.turn-in h2{color:#ffd9ae}
+.entry.turn-in .stores{margin-top:26px}
+
+/* phones */
+.phone{width:min(320px,100%);background:#0a0806;border:1px solid #4a3d2a;border-radius:46px;padding:12px;box-shadow:0 30px 60px rgba(0,0,0,.55)}
+.screen{background:#16120d;border-radius:36px;overflow:hidden;padding:20px 18px 22px}
+.probe .v{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:27px}
+.probe .k{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-top:2px}
+.verdict .k{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ember-hi);font-weight:700}
+.eta-row .k{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.eta-row .v{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:21px}
+
+footer{background:#0b0906;padding:44px 0 56px;border-top:1px solid var(--line)}
+.foot-inner{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center}
+footer p{font-size:14.5px;color:var(--ink-3)}
+footer a{color:var(--ink-2);display:inline-flex;align-items:center;min-height:44px;padding:0 2px}
+
+@media (min-width:960px){
+  .log::before{left:50%;margin-left:-1px}
+  .entry{width:50%;padding:38px 64px 38px 0}
+  .entry .node{left:auto;right:-9px;top:50px}
+  .entry:nth-of-type(even){margin-left:50%;padding:38px 0 38px 64px}
+  .entry:nth-of-type(even) .node{left:-9px;right:auto}
+  .entry.turn-in{width:100%;margin-left:0;padding:48px 56px}
+  .entry.turn-in .node{display:none}
+  .entry .phone{margin-left:auto}
+  .entry:nth-of-type(even) .phone{margin-left:0;margin-right:auto}
+}
+@media (max-width:640px){
+  body{font-size:16.5px}
+  .wrap{padding:0 20px}
+  .btn-store{flex:1 1 100%;height:68px}
+  .entry{padding-left:64px}
+  .entry .node{left:14px}
+  .log::before{left:21px}
+  .entry.turn-in{padding:32px 22px 34px 64px}
+  .entry.turn-in .node{left:36px;top:44px}
+}
+
+/* ---------- app screenshots (real captures from the app, 1080x1920) ---------- */
+.screen.shot{padding:0;min-height:0;aspect-ratio:9/16;background:#10151c}
+.screen.shot img{width:100%;height:100%;object-fit:cover}
+.board .phone{margin-inline:auto}</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="brand"><img src="/assets/app-icon.png" alt="PitTech app icon — the Ember mascot"><span class="name">PitTech</span></div>
+    <h1>If it happened at the pit, <span class="heat">it's in the log.</span></h1>
+    <p class="promise">Your cook, logged live. PitTech's timeline is the soul of the app — this page is built the same way. Read one real brisket, entry by entry, and you'll know exactly what the app does.</p>
+    <div class="stores">
+      <a class="btn-store" href="https://testflight.apple.com/join/bvq7vKfn">
+        <img src="/assets/app-icon.png" alt="">
+        <span><span class="os">iOS · Open Beta</span><span class="go">Join on TestFlight</span></span>
+      </a>
+      <a class="btn-store ghost" href="https://play.google.com/store/apps/details?id=com.pittech">
+        <img src="/assets/app-icon.png" alt="">
+        <span><span class="os">Android</span><span class="go">Get it on Google Play</span></span>
+      </a>
+    </div>
+    <p class="bio">Open-source BBQ cooking companion. Now in open beta.</p>
+    <div class="log-intro"><span class="rule"></span><span>Cook #14 · Brisket · The full log</span><span class="rule"></span></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="log">
+
+    <article class="entry">
+      <span class="node major"></span>
+      <time>6:42 PM</time><span class="kind">Milestone</span>
+      <h2 class="minor">Fire lit — and every probe accounted for.</h2>
+      <p class="body">Before the cook starts, PitTech maps your sensors: Home Assistant channels and Bluetooth probes, assigned to pit and food from the cook setup itself. When a number moves on the board, you know exactly which probe it came from.</p>
+      <div class="data-strip">
+        <div class="cell"><div class="v">225<small>°F</small></div><div class="k">Pit · HA sensor</div></div>
+        <div class="cell"><div class="v">2</div><div class="k">Food probes mapped</div></div>
+        <div class="cell"><div class="v">203<small>°F</small></div><div class="k">Target</div></div>
+      </div>
+    </article>
+
+    <article class="entry">
+      <span class="node"></span>
+      <time>7:05 PM</time><span class="kind">Milestone</span>
+      <h2 class="minor">Brisket on — started from a recipe.</h2>
+      <p class="body">This cook began from a saved recipe: target temps, wood, and steps preloaded. Recipes live beside your history, so a cook that worked becomes the starting point for the next one.</p>
+    </article>
+
+    <article class="entry">
+      <span class="node major"></span>
+      <time>8:20 PM</time><span class="kind">Live board</span>
+      <h2>The board, one hour in.</h2>
+      <p class="body">Pit and food temps, progress to target, a live ETA, and a verdict in plain words. This is the screen you'll check a hundred times tonight — built to be read in one glance, in the dark, with greasy hands.</p>
+      <div class="attach">
+        <div class="phone">
+          <div class="screen shot">
+            <img src="/screenshots/live-board.png" alt="PitTech live cook board — verdict “On pace — nothing needs doing”, probe at 175°F toward a 203°F target" width="1080" height="1920">
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="entry">
+      <span class="node"></span>
+      <time>9:31 PM</time><span class="kind">Note + photo</span>
+      <h2 class="minor">“Bark setting up dark. Spritzed.”</h2>
+      <p class="body">Notes and photos drop onto the timeline in two taps, stamped with the time and the temps at that moment. Months later, this is the entry that tells you why that brisket was the good one.</p>
+    </article>
+
+    <article class="entry">
+      <span class="node major"></span>
+      <time>12:15 AM</time><span class="kind">The stall</span>
+      <h2 class="minor">158°F, and holding. The verdict says ride it out.</h2>
+      <p class="body">PitTech reads your cook's own curve. When the stall hits, the ETA recalculates honestly and the verdict tells you where you stand — no guessing, no panic-wrapping at 1 AM.</p>
+    </article>
+
+    <article class="entry">
+      <span class="node"></span>
+      <time>1:10 AM</time><span class="kind">Checked from bed</span>
+      <h2 class="minor">The log is wherever you are.</h2>
+      <p class="body">An account is optional — the app runs fully without one. Sign in and your cooks sync privately, so the board on the tablet by the pit and the phone on your nightstand are the same cook.</p>
+    </article>
+
+    <article class="entry">
+      <span class="node"></span>
+      <time>3:02 AM</time><span class="kind">Wrapped</span>
+      <h2 class="minor">“Ask my cooks anything.”</h2>
+      <p class="body">PitTech connects to AI tools over MCP. At the wrap, you can ask when this brisket will finish, or what your October brisket rested at — and get answers from your actual logs, not generic advice.</p>
+    </article>
+
+    <article class="entry">
+      <span class="node"></span>
+      <time>4:15 AM</time><span class="kind">Community</span>
+      <h2 class="minor">Somebody else is awake, too.</h2>
+      <p class="body">The community feed shows other pitmasters' cooks — their timelines, temps, and notes on the same cuts. The overnight club shares its homework.</p>
+    </article>
+
+    <article class="entry">
+      <span class="node major"></span>
+      <time>6:30 AM</time><span class="kind">Pulled · Resting</span>
+      <h2>Cook closed. It joins the record.</h2>
+      <p class="body">When the cook ends, the whole log — timeline, temps, notes, photos — files into your history. Nothing about tonight is lost, and the next cook starts smarter.</p>
+      <div class="attach">
+        <div class="phone">
+          <div class="screen shot">
+            <img src="/screenshots/history.png" alt="PitTech finished cook — the “Last brisket” record with its results card and five-star rating" width="1080" height="1920">
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="entry">
+      <span class="node"></span>
+      <time>6:31 AM</time><span class="kind">The app's timeline</span>
+      <h2 class="minor">And here's the same night, in the app.</h2>
+      <p class="body">The timeline screen is where it all lives — the surface this whole page borrowed. Every cook you run gets one.</p>
+      <div class="attach">
+        <div class="phone">
+          <div class="screen shot">
+            <img src="/screenshots/timeline.png" alt="PitTech cook timeline — preparation started, milestones and a cook note in order" width="1080" height="1920">
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="entry turn-in">
+      <span class="node major"></span>
+      <time>Turn-in</time><span class="kind">Final entry</span>
+      <h2>Start your own log tonight.</h2>
+      <p class="body" style="color:var(--ink-2)">Free during open beta, on iOS and Android. Your first entry is one tap away.</p>
+      <div class="stores">
+        <a class="btn-store" href="https://testflight.apple.com/join/bvq7vKfn">
+          <img src="/assets/app-icon.png" alt="">
+          <span><span class="os">iOS · Open Beta</span><span class="go">Join on TestFlight</span></span>
+        </a>
+        <a class="btn-store ghost" href="https://play.google.com/store/apps/details?id=com.pittech">
+          <img src="/assets/app-icon.png" alt="">
+          <span><span class="os">Android</span><span class="go">Get it on Google Play</span></span>
+        </a>
+      </div>
+    </article>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot-inner">
+    <p>PitTech — your cook, logged live.</p>
+    <p><a href="https://pittech-privacy-production.up.railway.app/">Privacy Policy</a></p>
+    <p>© 2026 Sportfolio</p>
+  </div>
+</footer>
+
+</body>
+</html>
