@@ -206,7 +206,14 @@ class FoodFirstCookScreenTest {
         }
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Quick entry cook").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Quick entry cook").performClick()
+        // The food card is composed by the cook detail screen after the
+        // click lands; scrolling to it without an existence wait races the
+        // navigation on a slow emulator (run 42892930438 attempt 2 failed
+        // performScrollTo with the card not yet in the tree). Wait for each
+        // target to exist before interacting with it.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("food-card-" + brisket.id, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("food-card-" + brisket.id, useUnmergedTree = true).performScrollTo().performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("food-ingredients-" + brisket.id).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("food-ingredients-" + brisket.id).performScrollTo().performClick()
         // Two seasonings, two typings, two enters — nothing else.
         compose.onNodeWithTag("food-ingredient-name").performTextInput("Kosher salt")

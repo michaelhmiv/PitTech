@@ -28,7 +28,21 @@ class MealRecipeUserFlowsTest {
         val file = File(app.filesDir, "pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }; image.recycle()
     }
-    private fun waitFor(tag: String) { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() } }
+    // The poll predicate must be total: while the app is between windows
+    // (returning from the system share chooser, activity recreates),
+    // fetching the semantics tree throws IllegalStateException ("No
+    // compose hierarchies found in the app") instead of returning an
+    // empty list, and waitUntil does not swallow predicate exceptions —
+    // a momentary no-hierarchy instant failed
+    // savedRecipeCardPreviewAndCanceledShareKeepTheDraftAndSource
+    // outright (run 42892930438 attempt 4). Treat "no hierarchy yet" as
+    // "not yet"; the 20 s bound still fails the test if the node never
+    // appears, and the interactions after the wait assert as before.
+    private fun waitFor(tag: String) {
+        compose.waitUntil(20_000) {
+            runCatching { compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false)
+        }
+    }
     @Test fun codeImportRejectsForeignLinksWithoutChangingTheLocalLibrary() {
         runBlocking(Dispatchers.IO) { app.database.clearAllTables() }
         compose.activityRule.scenario.recreate()

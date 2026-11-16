@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The workflow runs this script once per phase (boot, upgrade, suites, flows,
-# controller, verify) as separate steps of one job, so each phase carries its
-# own step budget and a hang is attributed to the phase that hung. Invoked
-# with no argument it runs every phase in order, exactly as the previous
-# single-step version did. All phases of a job share one emulator: the boot
-# phase starts it detached (setsid, pid in $emulator_pid_file) and only the
-# verify phase — or any failure — stops it.
+# The workflow runs this script once per phase (boot, upgrade, suites,
+# restart, companion, flows, controller, verify) as separate steps of one
+# job, so each phase carries its own step budget and a hang is attributed
+# to the phase that hung. Invoked with no argument it runs every phase in
+# order, exactly as the previous single-step version did. All phases of a
+# job share one emulator AVD: the boot phase starts it detached (setsid,
+# pid in $emulator_pid_file), the restart phase restarts it in place
+# before the companion phase, and only the verify phase — or any
+# failure — stops it for good.
 phase="${1:-all}"
 case "$phase" in
-  all|boot|upgrade|suites|flows|controller|verify) ;;
-  *) echo "Usage: $0 [all|boot|upgrade|suites|flows|controller|verify]" >&2; exit 2 ;;
+  all|boot|upgrade|suites|restart|companion|flows|controller|verify) ;;
+  *) echo "Usage: $0 [all|boot|upgrade|suites|restart|companion|flows|controller|verify]" >&2; exit 2 ;;
 esac
 
 api_level="${PITTECH_API_LEVEL:-36}"
@@ -209,6 +211,46 @@ pull_app_screenshot() {
 }
 
 
+# The API 37 preview image aborts in SurfaceFlinger's RegionSampling
+# thread when its ranchu graphics mapper reads a color buffer
+# through DMA; disable luma sampling and restart SurfaceFlinger
+# once per emulator (re)start. No-op below API 37.
+stabilize_api37_graphics() {
+if (( api_level >= 37 )); then
+  # This preview image aborts in SurfaceFlinger's RegionSampling thread when
+  # its ranchu graphics mapper reads a color buffer through DMA.
+  timeout 30 adb root >/dev/null 2>&1 || true
+  timeout 60 adb wait-for-device || return 1
+  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\r')"
+  if [[ "$shell_uid" != "0" ]]; then
+    echo "Android 17 emulator did not grant root shell access." >&2
+    return 1
+  fi
+  timeout 20 adb shell setprop debug.sf.luma_sampling 0 || return 1
+  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\r')"
+  if [[ "$luma_sampling_value" != "0" ]]; then
+    echo "Could not disable SurfaceFlinger luma sampling." >&2
+    return 1
+  fi
+  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
+  timeout 20 adb shell stop surfaceflinger || return 1
+  timeout 20 adb shell start surfaceflinger || return 1
+  timeout 60 adb wait-for-device || return 1
+  for _ in $(seq 1 30); do
+    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
+    if [[ -n "$new_surfaceflinger_pid" && "$new_surfaceflinger_pid" != "$old_surfaceflinger_pid" ]]; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ -z "$new_surfaceflinger_pid" || "$new_surfaceflinger_pid" == "$old_surfaceflinger_pid" ]]; then
+    echo "SurfaceFlinger did not restart with luma sampling disabled." >&2
+    return 1
+  fi
+fi
+
+}
+
 # One boot attempt. Runs with errexit suppressed by the caller's `if`, so
 # every failure path returns 1 explicitly. A corrupt runner-image system
 # image can kill the emulator or its graphics stack before boot completes;
@@ -261,39 +303,7 @@ printf '%s' "$emulator_pid" > "$emulator_pid_file"
 adb start-server || return 1
 timeout 240 adb wait-for-device || return 1
 
-if (( api_level >= 37 )); then
-  # This preview image aborts in SurfaceFlinger's RegionSampling thread when
-  # its ranchu graphics mapper reads a color buffer through DMA.
-  timeout 30 adb root >/dev/null 2>&1 || true
-  timeout 60 adb wait-for-device || return 1
-  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\r')"
-  if [[ "$shell_uid" != "0" ]]; then
-    echo "Android 17 emulator did not grant root shell access." >&2
-    return 1
-  fi
-  timeout 20 adb shell setprop debug.sf.luma_sampling 0 || return 1
-  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\r')"
-  if [[ "$luma_sampling_value" != "0" ]]; then
-    echo "Could not disable SurfaceFlinger luma sampling." >&2
-    return 1
-  fi
-  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
-  timeout 20 adb shell stop surfaceflinger || return 1
-  timeout 20 adb shell start surfaceflinger || return 1
-  timeout 60 adb wait-for-device || return 1
-  for _ in $(seq 1 30); do
-    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
-    if [[ -n "$new_surfaceflinger_pid" && "$new_surfaceflinger_pid" != "$old_surfaceflinger_pid" ]]; then
-      break
-    fi
-    sleep 1
-  done
-  if [[ -z "$new_surfaceflinger_pid" || "$new_surfaceflinger_pid" == "$old_surfaceflinger_pid" ]]; then
-    echo "SurfaceFlinger did not restart with luma sampling disabled." >&2
-    return 1
-  fi
-fi
-
+stabilize_api37_graphics || return 1
 boot_deadline=$((SECONDS + 420))
 until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
   if (( SECONDS >= boot_deadline )); then
@@ -309,6 +319,15 @@ until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d 
   sleep 5
 done
   return 0
+}
+
+apply_display_settings() {
+  timeout 30 adb shell settings put global window_animation_scale 0
+  timeout 30 adb shell settings put global transition_animation_scale 0
+  timeout 30 adb shell settings put global animator_duration_scale 0
+  font_scale="${PITTECH_FONT_SCALE:-1.15}"
+  timeout 30 adb shell settings put system font_scale "$font_scale"
+  echo "Using Android font scale ${font_scale}."
 }
 
 run_boot_phase() {
@@ -331,14 +350,99 @@ run_boot_phase() {
     echo "Retrying the boot once with a fresh AVD."
   done
 
-timeout 30 adb shell settings put global window_animation_scale 0
-timeout 30 adb shell settings put global transition_animation_scale 0
-timeout 30 adb shell settings put global animator_duration_scale 0
-font_scale="${PITTECH_FONT_SCALE:-1.15}"
-timeout 30 adb shell settings put system font_scale "$font_scale"
-echo "Using Android font scale ${font_scale}."
+apply_display_settings
 }
 
+
+# One restart attempt: relaunch the EXISTING AVD without -wipe-data.
+# Installed builds, app data and the screenshots earlier phases saved
+# live on the data partition and must survive — the verify phase pulls
+# them — so only the emulator process and the Android system state
+# restart; the app process dies with the emulator, so the next phase
+# also starts from a cold app process.
+restart_emulator_once() {
+  setsid "$emulator_bin" \
+    -avd "$avd_name" \
+    -no-window \
+    -gpu lavapipe \
+    -noaudio \
+    -no-boot-anim \
+    -no-snapshot \
+    -camera-back none \
+    "${emulator_memory_args[@]}" \
+    > "$output_dir/emulator-restart.log" 2>&1 &
+  emulator_pid=$!
+  printf '%s' "$emulator_pid" > "$emulator_pid_file"
+
+  adb start-server || return 1
+  timeout 240 adb wait-for-device || return 1
+
+  stabilize_api37_graphics || return 1
+
+  boot_deadline=$((SECONDS + 420))
+  until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
+    if (( SECONDS >= boot_deadline )); then
+      echo "The Android emulator did not finish rebooting within 7 minutes." >&2
+      cat "$output_dir/emulator-restart.log" >&2
+      return 1
+    fi
+    if ! kill -0 "$emulator_pid" 2>/dev/null; then
+      echo "The Android emulator process exited before reboot completed." >&2
+      cat "$output_dir/emulator-restart.log" >&2
+      return 1
+    fi
+    sleep 5
+  done
+  return 0
+}
+
+# Issue #316: the companion chunks ran last in the suites phase, after
+# 121 data/integration tests (plus the upgrade phase) on an emulator
+# that had not restarted since boot, and every companion failure in run
+# 42892930438's four attempts landed in chunks 1-2 while those 121 tests
+# passed in every attempt. Restarting the emulator in place gives the
+# companion phase a fresh Android system without losing the phase's
+# earlier work.
+phase_restart() {
+  echo "Restarting the emulator on the existing AVD (no wipe) before the companion suites."
+  local old_pid=""
+  if [[ -f "$emulator_pid_file" ]]; then
+    old_pid="$(cat "$emulator_pid_file" 2>/dev/null || true)"
+  fi
+  stop_emulator
+  # adb emu kill is asynchronous: wait until the old process is really
+  # gone and the device leaves adb's list before relaunching, or the
+  # new emulator can collide with the dying one on the same console.
+  if [[ -n "$old_pid" ]]; then
+    for _ in $(seq 1 30); do
+      kill -0 "$old_pid" 2>/dev/null || break
+      sleep 1
+    done
+  fi
+  emulator_pid=""
+  rm -f "$emulator_pid_file"
+  for _ in $(seq 1 30); do
+    if ! timeout 10 adb devices 2>/dev/null | grep -q '^emulator-'; then break; fi
+    sleep 1
+  done
+  local attempt
+  for attempt in 1 2; do
+    if restart_emulator_once; then
+      echo "Emulator restarted on attempt ${attempt}."
+      break
+    fi
+    echo "Emulator restart attempt ${attempt} did not complete." >&2
+    stop_emulator
+    emulator_pid=""
+    rm -f "$emulator_pid_file"
+    if [[ "$attempt" == "2" ]]; then
+      echo "The Android emulator did not reboot after two attempts." >&2
+      exit 1
+    fi
+    echo "Retrying the restart once."
+  done
+  apply_display_settings
+}
 
 phase_upgrade() {
 app_apk="${GITHUB_WORKSPACE:-$(pwd)}/app/build/outputs/apk/debug/app-debug.apk"
@@ -611,6 +715,11 @@ phase_suites() {
 
 telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
 telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.CombustionAnchorStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
+# Issue #316: every suite in this phase starts from a cold app process
+# (force-stop, data untouched) — the hygiene the companion chunks
+# already had. The suites previously inherited whatever process state
+# the suites before them accumulated.
+timeout 20 adb shell am force-stop com.pittech.debug
 echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r -e class "$telemetry_test_selector" "$instrumentation_target" | tee "$telemetry_test_output"
 if ! grep -q 'OK (25 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
@@ -620,6 +729,7 @@ fi
 
 cloud_test_output="$output_dir/grillirg-cloud-tests.txt"
 cloud_test_selector='com.pittech.ui.GrillirGCloudMonitorScreenTest,com.pittech.devices.PrimePolarisSessionStoreTest'
+timeout 20 adb shell am force-stop com.pittech.debug
 echo "Running GrillirG cloud UI and encrypted-session tests on API $api_level."
 timeout 8m adb shell am instrument -w -r \
   -e class "$cloud_test_selector" \
@@ -633,6 +743,7 @@ fi
 
 provider_test_output="$output_dir/connected-provider-tests.txt"
 provider_test_selector='com.pittech.ui.ConnectedGrillProviderScreenTest,com.pittech.devices.ConnectedGrillSessionStoreTest,com.pittech.data.ConnectedGrillCookIntegrationTest,com.pittech.ConnectedGrillRecordingServiceTest'
+timeout 20 adb shell am force-stop com.pittech.debug
 echo "Running provider setup, credential isolation, and four-probe cook integration tests on API $api_level."
 timeout 10m adb shell am instrument -w -r \
   -e class "$provider_test_selector" \
@@ -649,6 +760,7 @@ fi
 
 recording_test_output="$output_dir/cook-recording-tests.txt"
 recording_test_selector='com.pittech.data.CookRecordingIntegrationTest,com.pittech.data.CookNoteIntegrationTest,com.pittech.data.CookExperienceMigrationTest,com.pittech.data.CookPhaseIntegrationTest,com.pittech.data.EventRecordingPathsTest,com.pittech.CookRecordingServiceTest,com.pittech.CookRecordingRecoveryTest,com.pittech.ui.ConnectedCookScreenTest'
+timeout 20 adb shell am force-stop com.pittech.debug
 echo "Running connected-cook persistence, migration, background-service, and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
@@ -665,6 +777,7 @@ if timeout 10 adb shell run-as com.pittech.debug test -f files/pittech-ui-test/c
 fi
 
 recipe_test_output="$output_dir/recipe-preparation-tests.txt"
+timeout 20 adb shell am force-stop com.pittech.debug
 echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest,com.pittech.data.OwnedPublicationTest,com.pittech.data.PublicationAcceptanceTest,com.pittech.data.LocalJournalRemovalTest,com.pittech.data.PrivateSyncStoreTest,com.pittech.data.PrivateSyncApplyTest,com.pittech.data.PlanDerivedAlertsTest' \
@@ -682,13 +795,25 @@ for kind in variant collection attempt; do
 done
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/android-meal-v9.zip > "$output_dir/portable-fixtures/android-meal-v9.zip"
 
+
+}
+
+phase_companion() {
+  discover_instrumentation_target
+
+# Issue #316: the companion chunks are their own phase, run after the
+# restart phase, instead of the tail of the suites phase. In run
+# 42892930438's four failed attempts the chunks were the only failures
+# in the phase — they inherited an emulator that had already run the
+# upgrade phase plus 121 data/integration tests since boot.
+#
 # The companion selector outgrew a single invocation: its 102 tests could
 # not reliably finish inside the suite's 8-minute wrapper on the current
 # runner image's slower emulator draws — lanes died mid-suite with every
 # test so far passing (issue #296) — while the 25–50-test suites around it
 # fit comfortably. The selector therefore runs as sequential chunks
 # in its original class order, each inside the same 8-minute wrapper the
-# 50-test recipe suite above uses. The chunks are disjoint, no class is
+# 50-test recipe suite in the suites phase uses. The chunks are disjoint, no class is
 # split, and their expected counts sum to the suite's 102 (guarded
 # below); each chunk must report its full count or the phase fails,
 # exactly as the single invocation did.
@@ -776,7 +901,6 @@ if [[ "$companion_expected_total" -ne 102 ]]; then
   echo "Companion chunk expected counts sum to ${companion_expected_total}, not the suite's 102 tests." >&2
   exit 1
 fi
-
 }
 
 phase_flows() {
@@ -1027,6 +1151,8 @@ case "$phase" in
     run_boot_phase
     phase_upgrade
     phase_suites
+    phase_restart
+    phase_companion
     phase_flows
     phase_controller
     phase_verify
@@ -1034,6 +1160,8 @@ case "$phase" in
   boot) run_boot_phase ;;
   upgrade) require_running_emulator; phase_upgrade ;;
   suites) require_running_emulator; phase_suites ;;
+  restart) require_running_emulator; phase_restart ;;
+  companion) require_running_emulator; phase_companion ;;
   flows) require_running_emulator; phase_flows ;;
   controller) require_running_emulator; phase_controller ;;
   verify) require_running_emulator; phase_verify ;;
