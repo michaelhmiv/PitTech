@@ -21,8 +21,8 @@ jobs:
     # below (each smaller than the old single 45-minute cliff, so a hang
     # fails in its own phase with attribution). This job value is only a
     # backstop covering the Gradle builds plus the sum of the phase budgets
-    # (25 + 30 + 35 + 30 + 15 + 15 = 150, plus build/install time).
-    timeout-minutes: 170
+    # (25 + 30 + 25 + 10 + 25 + 30 + 15 + 15 = 175, plus build/install time).
+    timeout-minutes: 195
     # Keep Android 17 emulator results advisory while its system graphics stack is unstable.
     continue-on-error: ${{ matrix.api == 37 }}
     strategy:
@@ -156,18 +156,49 @@ jobs:
           PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
         run: bash scripts/run-emulator-ui-tests.sh upgrade
 
-      # 35 minutes: the green font-1.15 lane runs this phase's content in
-      # ~17.5 minutes, and the slower font-1.5 draws inflate it ~1.35x
-      # (chunk timings, PR #310), projecting a passing slow run at ~24
-      # minutes before the finer companion chunking added three more
-      # instrumentation launches. 25 left no headroom for a slow pass.
+      # 25 minutes: the five data/integration suites are the larger half
+      # of the old combined suites phase (green font-1.15 total ~17.5
+      # minutes including the companion chunks, PR #313 arithmetic);
+      # the font-1.5 draws inflate ~1.35x. The companion chunks moved
+      # to their own step below (issue #316), so this budget covers
+      # the five suites alone with headroom for a slow pass.
       - name: Run data and integration suites
-        timeout-minutes: 35
+        timeout-minutes: 25
         env:
           PITTECH_API_LEVEL: ${{ matrix.api }}
           PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
           PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
         run: bash scripts/run-emulator-ui-tests.sh suites
+
+      # Issue #316: in run 42892930438's four failed attempts, the
+      # companion chunks were the only failures in the suites phase —
+      # they ran last, on an emulator that had already carried the
+      # upgrade phase plus 121 data/integration tests since boot,
+      # while those 121 tests passed in every attempt. Restarting the
+      # emulator on the existing AVD (no wipe: installed builds, app
+      # data and the screenshots earlier phases saved all persist)
+      # gives the companion chunks a fresh Android system and a cold
+      # app process. 10 minutes covers the stop, the restart script's
+      # own 7-minute boot deadline, and settings reapplication.
+      - name: Restart emulator for the companion suites
+        timeout-minutes: 10
+        env:
+          PITTECH_API_LEVEL: ${{ matrix.api }}
+          PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
+          PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
+        run: bash scripts/run-emulator-ui-tests.sh restart
+
+      # 25 minutes: the six companion chunks each carry their own
+      # 8-minute wrapper inside the script; a green font-1.15 lane runs
+      # the chunks in single-digit minutes and the font-1.5 inflation
+      # (~1.35x) still leaves this budget as headroom, not a target.
+      - name: Run companion suites
+        timeout-minutes: 25
+        env:
+          PITTECH_API_LEVEL: ${{ matrix.api }}
+          PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
+          PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
+        run: bash scripts/run-emulator-ui-tests.sh companion
 
       - name: Run UI flow suites
         timeout-minutes: 30

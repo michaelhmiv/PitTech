@@ -148,6 +148,10 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("cook-add-dish").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("dish-name").assertIsDisplayed().performTextInput("Brisket")
         composeRule.onNodeWithTag("dish-details-toggle").performClick()
+        // The details section's fields are composed by the toggle's
+        // expansion; interacting before they exist races it (issue #316 —
+        // the same pattern as preparation-amount-0 below).
+        composeRule.waitUntil(timeoutMillis = 15_000) { composeRule.onAllNodesWithTag("dish-food-type").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("dish-food-type").performClick()
         composeRule.onNodeWithText("Beef").performClick()
         composeRule.onNodeWithTag("dish-cut").performTextInput("Whole packer")
@@ -172,6 +176,11 @@ class PitTechUserFlowsTest {
         }
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
         composeRule.onNodeWithTag("preparation-item-details-0").performScrollTo().performClick()
+        // preparation-amount-0 is composed by the details expansion the
+        // click just triggered; on a slow emulator the scroll raced it
+        // and found no node (run 43926678302 attempt 2, upgrade phase —
+        // issue #316). Wait for the node to exist first.
+        composeRule.waitUntil(timeoutMillis = 15_000) { composeRule.onAllNodesWithTag("preparation-amount-0").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")
         composeRule.onNodeWithTag("preparation-notes").performScrollTo().performTextInput("Light, even coating.")
         composeRule.onNodeWithTag("dish-add-photos").performScrollTo().performClick()

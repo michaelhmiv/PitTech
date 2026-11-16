@@ -25,9 +25,19 @@ class GuidanceScreenTest {
         }
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Guided brisket").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Guided brisket").performClick()
-        compose.onNodeWithTag("next-action-card").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("guidance-done").performClick()
-        compose.onNodeWithTag("view-plan").performScrollTo().performClick()
+        // next-action-card, guidance-done and view-plan all live inside the
+        // guidance TurnInCard — a Material3 Card, whose semantics merge its
+        // descendants. In the merged tree the tagged nodes are folded into
+        // the card and intermittently vanish: run 42892930438 attempt 3
+        // failed performScrollTo with next-action-card present only in the
+        // unmerged tree. Wait for each node in the unmerged tree — the
+        // pattern sibling tests already use for tags under merging
+        // containers — and interact there.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("next-action-card", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("next-action-card", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("guidance-done", useUnmergedTree = true).performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("view-plan", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("view-plan", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("Pause guidance").assertIsDisplayed()
         compose.onNodeWithTag("guidance-step-check").assertIsDisplayed()
         val file = File(app.filesDir, "pittech-ui-test/guidance-plan.png").apply { parentFile!!.mkdirs() }
