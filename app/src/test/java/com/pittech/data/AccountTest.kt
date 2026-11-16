@@ -99,7 +99,11 @@ class AccountTest {
     }
     @Test fun disabledAccountsAndStorageFailuresNeverSendEmail() = runBlocking {
         var calls=0; val api=AccountAPI { _,_,_ -> calls++; JSONObject() }
-        val disabled=AccountManager(Memory(),this,api); disabled.start("cook@example.com"); yield()
+        // Pass the disabled state explicitly: the constructor default reads
+        // the build's PITTECH_ONLINE_ENABLED flag, which the Play release
+        // lane compiles with online ON (issue #318) — the premise of this
+        // test must not depend on which lane built it.
+        val disabled=AccountManager(Memory(),this,api,false); disabled.start("cook@example.com"); yield()
         val failing=AccountManager(Memory(fail=true),this,api,true); failing.start("cook@example.com"); yield()
         assertEquals(0,calls)
     }
