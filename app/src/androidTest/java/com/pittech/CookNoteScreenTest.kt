@@ -78,6 +78,10 @@ class CookNoteScreenTest {
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("timeline-entry-details").assertIsDisplayed().performTextInput("Bark check at dawn")
         closeFocusedSoftKeyboard()
+        // The back press must reach the sheet, not the IME: wait until the
+        // keyboard is actually gone before injecting it (see
+        // waitForSoftKeyboardHidden — issue #316).
+        waitForSoftKeyboardHidden(compose.activity)
         androidx.test.espresso.Espresso.pressBack()
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isEmpty() }
         val drafts = runBlocking(Dispatchers.IO) { app.database.experienceDao().observeDrafts(id).first() }
