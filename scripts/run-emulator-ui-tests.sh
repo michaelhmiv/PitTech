@@ -536,6 +536,16 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
     "$instrumentation_target" | tee "$output_dir/live-upgrade-prepare.txt"
   grep -q 'OK (1 test)' "$output_dir/live-upgrade-prepare.txt"
   ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/live-upgrade-prepare.txt"
+  # Instrumentation completion asynchronously kills its target process —
+  # the same hazard the telemetry section below already handles. In run
+  # 43938072799 attempt 2 the kill landed ~3 s after prepare finished,
+  # after the foreground service had started (20:01:07) and around the
+  # relaunch below: the activity's process died mid-wait and the
+  # service poll could never succeed. Force-stop first so the kill is
+  # deterministic and already landed, then cold-start the OLD app; the
+  # prepared cook is durable state and survives, exactly as the
+  # telemetry section's force-stop + cold start relies on.
+  timeout 20 adb shell am force-stop com.pittech.debug
   # Only the OLD app is opened. Require its foreground service before replacement.
   timeout 20 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
   timeout 20 adb shell input keyevent KEYCODE_HOME
