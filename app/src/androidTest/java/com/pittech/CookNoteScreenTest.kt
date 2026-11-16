@@ -117,20 +117,7 @@ class CookNoteScreenTest {
         // issue #316).
         waitForSoftKeyboardHidden(compose.activity)
         waitForComposerLayoutToSettle()
-        // Dismiss through the activity's OnBackPressedDispatcher rather
-        // than a raw key event. Even with the keyboard verifiably hidden
-        // and the layout settled, the emulator fleet intermittently
-        // routes the injected KEYCODE_BACK somewhere that never reaches
-        // the sheet (main run 43968801641 attempt 2 failed at the
-        // disappearance wait below with both guards satisfied — issue
-        // #316). The dispatcher call exercises the identical handler
-        // chain a hardware Back press does — sheet BackHandler →
-        // onDismissRequest → keepDraft — and everything after it (draft
-        // persisted verbatim, Resume restoring the text) is still
-        // asserted exactly.
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            compose.activity.onBackPressedDispatcher.onBackPressed()
-        }
+        androidx.test.espresso.Espresso.pressBack()
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isEmpty() }
         val drafts = runBlocking(Dispatchers.IO) { app.database.experienceDao().observeDrafts(id).first() }
         assertEquals(1, drafts.size)
