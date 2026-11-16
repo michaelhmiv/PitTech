@@ -12,10 +12,42 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class CookNoteScreenTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    // Issue #316, iteration 3: hiding the keyboard is not the end of the
+    // gesture's preconditions. The composer sheet pads for the IME
+    // (imePadding), so when the keyboard hides the sheet grows back to
+    // full height and its anchored-draggable state re-anchors; a back
+    // press injected during that relayout is lost and the sheet never
+    // dismisses (run 43922038257: the IME was provably hidden first —
+    // waitForSoftKeyboardHidden passed — and the composer was still
+    // open 15 s later, on three lanes). The same class's check-in test
+    // dismisses its sheet with Back reliably and never opens the
+    // keyboard, which is what isolates the coupling. Wait for the
+    // observable end of the relayout — the composer node's window
+    // bounds identical across consecutive samples, each taken after a
+    // main-thread round trip so a sample reflects all queued layout
+    // work — before the single back press.
+    private fun waitForComposerLayoutToSettle() {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(15_000)
+        var previous: androidx.compose.ui.geometry.Rect? = null
+        while (true) {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { }
+            val bounds = runCatching {
+                compose.onNodeWithTag("timeline-entry-details").fetchSemanticsNode().boundsInWindow
+            }.getOrNull()
+            if (bounds != null && bounds == previous) return
+            previous = bounds
+            if (System.nanoTime() >= deadline) {
+                throw AssertionError("The note composer layout did not settle within 15 s after the keyboard hid; a back press now could be lost in the sheet's relayout.")
+            }
+            Thread.sleep(150)
+        }
+    }
 
     /**
      * PL-02 (issue #172): the legacy check-in offers Log it / Snooze 10 min /
@@ -78,10 +110,13 @@ class CookNoteScreenTest {
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("timeline-entry-details").assertIsDisplayed().performTextInput("Bark check at dawn")
         closeFocusedSoftKeyboard()
-        // The back press must reach the sheet, not the IME: wait until the
-        // keyboard is actually gone before injecting it (see
-        // waitForSoftKeyboardHidden — issue #316).
+        // The back press must reach the sheet, not the IME, and not the
+        // sheet's post-IME relayout: wait until the keyboard is actually
+        // gone and the composer has finished resizing (see
+        // waitForSoftKeyboardHidden and waitForComposerLayoutToSettle —
+        // issue #316).
         waitForSoftKeyboardHidden(compose.activity)
+        waitForComposerLayoutToSettle()
         androidx.test.espresso.Espresso.pressBack()
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isEmpty() }
         val drafts = runBlocking(Dispatchers.IO) { app.database.experienceDao().observeDrafts(id).first() }

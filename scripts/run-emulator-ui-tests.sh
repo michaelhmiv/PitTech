@@ -32,10 +32,13 @@ if [[ -z "$avdmanager_bin" ]]; then avdmanager_bin="$sdk_root/cmdline-tools/late
 emulator_bin="$sdk_root/emulator/emulator"
 output_dir="${GITHUB_WORKSPACE:-$(pwd)}/app/build/ci-emulator"
 emulator_pid=""
-emulator_memory_args=()
-if (( api_level >= 37 )); then
-  emulator_memory_args=(-memory 4096)
-fi
+# Every lane gets 4 GB: the API 37 preview image needed it first, and
+# the API 36 lanes showed why they do too — on the pixel_2 profile's
+# default 2 GB, run 43922038257's font-1.5 upgrade phase logged repeated
+# ActivityManager "Rescheduling restart of crashed service … for
+# mem-pressure-event" for the app's recording service (issue #316).
+# The hosted runner has the RAM; the guest was the constraint.
+emulator_memory_args=(-memory 4096)
 
 if [[ -z "$sdk_root" ]]; then
   echo "ANDROID_SDK_ROOT or ANDROID_HOME must point to the Android SDK." >&2
@@ -328,6 +331,19 @@ apply_display_settings() {
   font_scale="${PITTECH_FONT_SCALE:-1.15}"
   timeout 30 adb shell settings put system font_scale "$font_scale"
   echo "Using Android font scale ${font_scale}."
+  # Issue #316: the cached-apps freezer must not freeze the app process
+  # the upgrade phase kills and waits on. In run 43922038257 (font 1.5),
+  # ActivityManager restarted the process for the recording service and
+  # then froze it 24 s later ("freezing <pid> com.pittech.debug") —
+  # before the service could promote to foreground — while its restart
+  # was being rescheduled under memory pressure; the staged 600 s
+  # restart deadline expired with the process alive but frozen. The
+  # behavior under test (AMS restarts the sticky service, it promotes,
+  # sampling resumes) still has to genuinely happen; the freezer is a
+  # CI-emulator determinism setting in the same family as the animation
+  # scales above.
+  timeout 30 adb shell settings put global cached_apps_freezer disabled
+  timeout 30 adb shell device_config put activity_manager_native_boot use_freezer false || true
 }
 
 run_boot_phase() {
