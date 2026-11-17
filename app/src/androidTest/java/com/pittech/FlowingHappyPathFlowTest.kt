@@ -124,6 +124,10 @@ import java.util.UUID
             waitFor("fork-save")
             compose.onNodeWithTag("fork-rub-0").performScrollTo().performTextReplacement("House rub")
             compose.onNodeWithTag("fork-wrap-0-foil").performScrollTo().performClick()
+            // The sheet's later fields compose after its first ones;
+            // fork-target-0 was not yet in the tree when this ran on
+            // main (run 43968801641 — issue #316). Wait for it to exist.
+            waitFor("fork-target-0")
             compose.onNodeWithTag("fork-target-0").performScrollTo().performTextReplacement("165")
             shot("public-fork-tweak")
             // The text entries leave the soft keyboard up over the
