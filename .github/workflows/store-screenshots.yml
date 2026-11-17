@@ -16,9 +16,9 @@ permissions:
 
 jobs:
   capture-store-screenshots:
-    name: Capture store screenshots (API 36 emulator)
+    name: GA4 DebugView probe (API 36 emulator) — throwaway branch variant
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -78,14 +78,27 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           test -e /dev/kvm
 
-      - name: Capture the store screenshots
-        run: bash scripts/capture-store-screenshots.sh
+      # THROWAWAY (branch work/ga4-debugview-probe only, never merge):
+      # GA4 DebugView probe steps replace the screenshot capture on this
+      # branch. The workflow file keeps its name/trigger so it stays
+      # dispatchable from this ref.
+      - name: Verify the google-services plugin applied (resource names only)
+        run: |
+          values_file="$(find app/build/generated -name values.xml -path '*GoogleServices*' | head -n 1)"
+          echo "Generated google-services resources: $values_file"
+          test -n "$values_file"
+          grep -o 'name="[^"]*"' "$values_file" | sort -u
+          grep -q 'name="google_app_id"' "$values_file"
+          echo "google-services plugin applied: google_app_id resource generated."
 
-      - name: Upload the store screenshots
+      - name: Run the GA4 DebugView probe
+        run: bash scripts/ga4-debugview-probe.sh
+
+      - name: Upload the GA4 probe evidence
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: pittech-store-screenshots
-          path: app/build/store-screenshots/**
+          name: pittech-ga4-probe
+          path: app/build/ga4-probe/**
           if-no-files-found: warn
           retention-days: 30
