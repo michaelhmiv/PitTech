@@ -139,6 +139,10 @@ enum RecipeError: LocalizedError, Equatable {
             library.recipeRevisions.append(revision); library.recipeAssets.append(contentsOf: assets)
             try retainRecipeGuide(revisionId, snapshot: snapshot, inheritedRevisionId: assetRevisionId ?? priorRevision?["id"]?.stringValue, pinnedStory: pinnedGuideStory)
             try library.validateCookExperience(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) }
+            // Issue #322: a save that created the recipe (no id was given —
+            // duplicateRecipe lands here too, also a library creation) is
+            // the recipe_created settling point.
+            if recipeId == nil { PitTechAnalytics.recipeCreated() }
             return id
         } catch { library = prior; written.forEach { try? FileManager.default.removeItem(at: $0) }; throw error }
     }

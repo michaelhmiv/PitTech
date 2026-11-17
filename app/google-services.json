@@ -1,0 +1,97 @@
+{
+  "project_info": {
+    "project_number": "848714330882",
+    "project_id": "pittech-529a1",
+    "storage_bucket": "pittech-529a1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:848714330882:android:af7008163788812f6b481b",
+        "android_client_info": {
+          "package_name": "com.pittech"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "848714330882-vobo98ga11a2mn6f74ajaq67h2g6phvo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDsN9alUADY4kuoXliMBCW8WZ6iLgFp-7g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "848714330882-vobo98ga11a2mn6f74ajaq67h2g6phvo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:848714330882:android:3f0c968a524926496b481b",
+        "android_client_info": {
+          "package_name": "com.pittech.debug"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "848714330882-vobo98ga11a2mn6f74ajaq67h2g6phvo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDsN9alUADY4kuoXliMBCW8WZ6iLgFp-7g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "848714330882-vobo98ga11a2mn6f74ajaq67h2g6phvo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:848714330882:android:328e155174c939db6b481b",
+        "android_client_info": {
+          "package_name": "com.pittech.dev"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "848714330882-vobo98ga11a2mn6f74ajaq67h2g6phvo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDsN9alUADY4kuoXliMBCW8WZ6iLgFp-7g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "848714330882-vobo98ga11a2mn6f74ajaq67h2g6phvo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

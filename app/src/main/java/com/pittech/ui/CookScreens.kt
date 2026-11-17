@@ -404,6 +404,20 @@ internal fun PitTechApp(
     }
 
     val section = MainSection.valueOf(selectedSection)
+    // GA4 screen views (issue #322): the section-level surfaces report here;
+    // the cook detail (an early return above) reports its own tabs. This
+    // point is only composed in the section shell — the Start-a-cook flow
+    // also returns before it — so each visible surface reports exactly once
+    // per navigation.
+    val sectionAnalyticsScreen = when (section) {
+        MainSection.COOKS -> com.pittech.analytics.AnalyticsScreen.HOME
+        MainSection.RECIPES -> com.pittech.analytics.AnalyticsScreen.RECIPES
+        MainSection.MORE -> if (moreDestination == "Settings") com.pittech.analytics.AnalyticsScreen.SETTINGS else null
+        else -> null
+    }
+    LaunchedEffect(sectionAnalyticsScreen) {
+        sectionAnalyticsScreen?.let { com.pittech.analytics.PitTechAnalytics.screenView(it) }
+    }
     BackHandler(enabled = section == MainSection.MORE && moreDestination != null) { moreDestination = null }
     // From any other tab root, back returns to the start tab (Cooks) instead
     // of exiting; only the Cooks root lets back leave the app. The More

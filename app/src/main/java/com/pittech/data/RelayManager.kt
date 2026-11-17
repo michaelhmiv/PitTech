@@ -60,6 +60,7 @@ internal class RelayManager(private val context: Context, private val scope: Cor
         _state.update { it.copy(label = "Uploading the selected Cook Pack") }
         val receipt = client.upload(value, vault.pack(value), progressCallback()); coroutineContext.ensureActive()
         vault.finish(value, receipt)
+        com.pittech.analytics.PitTechAnalytics.cookShared()
         _state.update { it.copy(message = "Your code is ready. Anyone with it can access this selected pack.") }
     }
     fun download() = run("Downloading for preview") {

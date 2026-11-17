@@ -24,6 +24,9 @@ struct PitTechApp: App {
         // crash, and the previous session is judged before this session
         // overwrites its marker.
         CrashDiagnostics.install()
+        // GA4 analytics (issue #322): no-op until the Firebase client config
+        // (GoogleService-Info.plist) is installed; never throws into startup.
+        PitTechAnalytics.configure()
         // #183: the guidance / alert / legacy-reminder action categories.
         PitTechNotificationCategories.register()
         let account = _account.wrappedValue

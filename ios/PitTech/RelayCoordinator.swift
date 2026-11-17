@@ -56,6 +56,7 @@ import Observation
         let file = try vault.pack(value), receipt = try await client.upload(value, file: file, progress: progressCallback())
         try Task.checkCancellation(); var ready = value; ready.receipt = receipt
         try vault.save(ready); try? FileManager.default.removeItem(at: file)
+        PitTechAnalytics.cookShared()
         message = "Your code is ready. Anyone with it can access this selected pack."
     }
     func download() {

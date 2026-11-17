@@ -43,6 +43,7 @@
     "AccountTests",
     "AccountTransportTests",
     "ActivityTimerTests",
+    "AnalyticsTests",
     "ArchiveBoundaryTests",
     "CommunityBenchmarksTests",
     "CommunityControlsTests",

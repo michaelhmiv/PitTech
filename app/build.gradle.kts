@@ -4,6 +4,14 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// GA4 analytics (issue #322): the google-services plugin runs only when the
+// real Firebase client config has been installed at app/google-services.json
+// (Phase B console work). Without it the build carries no generated Firebase
+// resources and PitTechAnalytics stays a silent no-op at runtime.
+if (file("google-services.json").isFile) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 val pittechVersionCode = providers.gradleProperty("pittechVersionCode").orNull?.toIntOrNull() ?: 1
 val pittechVersionName = providers.gradleProperty("pittechVersionName").orNull ?: "0.1.0"
 val pittechLiveAds = providers.gradleProperty("pittechLiveAds").orNull?.toBooleanStrictOrNull() ?: false
@@ -108,6 +116,13 @@ dependencies {
     implementation("com.github.combustion-inc:combustion-android-ble:v3.5.4")
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
+
+    // GA4 via Firebase Analytics (issue #322). The wrapper in
+    // com.pittech.analytics is the only caller; it initializes Firebase
+    // manually (the manifest removes FirebaseInitProvider) and only when the
+    // google-services resources exist, so unconfigured builds never crash.
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
+    implementation("com.google.firebase:firebase-analytics")
 
     implementation("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.4.0")
     implementation("com.google.android.ump:user-messaging-platform:4.0.0")

@@ -103,6 +103,16 @@ struct ContentView: View {
         }
         .onChange(of: community.linkSequence) { _, _ in selectedTab = "discover" }
         .onChange(of: store.recipesTabRequest) { _, _ in selectedTab = "recipes" }
+        // GA4 screen views (issue #322): the tab-level surfaces report here;
+        // the cook detail reports its own sections and Settings its own view.
+        .onAppear {
+            if selectedTab == "meals" { PitTechAnalytics.screenView(.home) }
+            else if selectedTab == "recipes" { PitTechAnalytics.screenView(.recipes) }
+        }
+        .onChange(of: selectedTab) { _, tab in
+            if tab == "meals" { PitTechAnalytics.screenView(.home) }
+            else if tab == "recipes" { PitTechAnalytics.screenView(.recipes) }
+        }
         .environment(telemetry)
         .tint(PitTechStyle.emberText)
         .task {
@@ -925,7 +935,7 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .task { notificationsAllowed = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .authorized }
-            .onAppear { savedCrashReport = CrashDiagnostics.shared.savedReport() }
+            .onAppear { savedCrashReport = CrashDiagnostics.shared.savedReport(); PitTechAnalytics.screenView(.settings) }
             .fileExporter(isPresented: $showingExport, document: exportDocument, contentType: .zip, defaultFilename: "PitTech-Cooks") { result in
                 if case .failure = result { archiveError = "PitTech couldn't save the backup to that location." }
             }

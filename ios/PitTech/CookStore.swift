@@ -112,7 +112,7 @@ final class CookStore {
             catch { library = prior; saveError = error.localizedDescription; return }
         }
         save()
-        if saveError != nil { library = prior }
+        if saveError != nil { library = prior } else { PitTechAnalytics.cookStarted() }
     }
 
     func addDish(cookId: String, name: String) {
@@ -158,7 +158,7 @@ final class CookStore {
         library.cooks[index].endedAtUtcMillis = now
         library.cooks[index].updatedAtUtcMillis = now
         save()
-        if saveError != nil { library = prior }
+        if saveError != nil { library = prior } else { PitTechAnalytics.cookCompleted() }
     }
 
     func addReading(cookId: String, probeName: String, value: Double, unit: String, measurementType: String) {

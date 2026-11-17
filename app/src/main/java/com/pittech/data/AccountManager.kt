@@ -81,6 +81,7 @@ internal class AccountManager(private val storage: AccountStorage, private val s
             val session = AccountSession.parse(api.call("/v1/auth/verify",body,null))
             state.deletion?.userId?.let{owner->if(owner!=session.userId){runCatching{api.call("/v1/auth/logout",JSONObject().put("refreshToken",session.refreshToken),null)};error("Verify the original account.")}}
             save(state.copy(session=session,challenge=null,providerChallenge=null,refreshOperation=null)); link=null
+            com.pittech.analytics.PitTechAnalytics.signIn(com.pittech.analytics.AnalyticsSignInMethod.EMAIL)
             publish(message="Signed in. Your local cookbook is unchanged.")
         } catch(e: AccountFailure) {
             if(e.status == 401) { save(state.copy(challenge=challenge.copy(operation=null,secret=null))); link=null }
@@ -116,6 +117,7 @@ internal class AccountManager(private val storage: AccountStorage, private val s
             val session = AccountSession.parse(api.call("/v1/auth/provider/verify",JSONObject().put("challengeId",challenge.id).put("verifier",challenge.verifier).put("idToken",idToken).put("idempotencyId",challenge.operation),null))
             state.deletion?.userId?.let{owner->if(owner!=session.userId){runCatching{api.call("/v1/auth/logout",JSONObject().put("refreshToken",session.refreshToken),null)};error("Verify the original account.")}}
             save(state.copy(session=session,challenge=null,providerChallenge=null,refreshOperation=null)); link=null
+            com.pittech.analytics.PitTechAnalytics.signIn(com.pittech.analytics.AnalyticsSignInMethod.GOOGLE)
             runCatching { refreshAccount() }
             publish(message="Signed in with Google. Your local cookbook is unchanged.")
         } catch(e: AccountFailure) {
