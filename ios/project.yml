@@ -21,6 +21,9 @@ packages:
   CombustionBLE:
     url: https://github.com/combustion-inc/combustion-ios-ble.git
     exactVersion: 1.0.0
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk.git
+    from: 12.0.0
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads.git
     from: 13.11.0
@@ -50,6 +53,8 @@ targets:
     dependencies:
       - package: CombustionBLE
         product: CombustionBLE
+      - package: Firebase
+        product: FirebaseAnalytics
       - package: GoogleMobileAds
         product: GoogleMobileAds
       - package: GoogleUserMessagingPlatform

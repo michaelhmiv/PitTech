@@ -22,7 +22,7 @@ PitTech stores the cook information you choose to enter. This may include cook a
 
 On Android, if you select photos, PitTech copies them into the app's private storage on your device. On iOS, an imported PitTech ZIP archive can restore photos from an existing cook history; the current iOS app does not add or display photos. Android and iOS may also save a crash diagnostic locally. That report can include a reference code, time, error summary, exception details, thread name, stack trace, and, on Android, process-exit details.
 
-Cook logging does not require sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. The app does not use a separate analytics or automatic crash-reporting service. In experimental debug and Firebase Dev controller-test builds, BLE scan observations, GATT inventory, protocol responses, bounded passive-notification statistics, and bounded controller debug observations are held in memory for the current controller-test screen session and are not uploaded automatically. Raw controller interrogation data is not persisted as a controller history.
+Cook logging does not require sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. The app does not use an automatic crash-reporting service. The app does use Google Analytics (Firebase Analytics) for product analytics, as described under Product analytics below. In experimental debug and Firebase Dev controller-test builds, BLE scan observations, GATT inventory, protocol responses, bounded passive-notification statistics, and bounded controller debug observations are held in memory for the current controller-test screen session and are not uploaded automatically. Raw controller interrogation data is not persisted as a controller history.
 
 ## Android grill connections
 
@@ -47,6 +47,10 @@ When PitTech checks privacy choices or requests an ad, Google Mobile Ads and Goo
 PitTech does not include cook records, notes, ingredients, temperature readings, or photos in ad requests. Those remain on your device unless you export or share them. Google's handling of information processed by its advertising and consent services is described in [Google's Privacy Policy](https://policies.google.com/privacy).
 
 When a privacy choice is required, PitTech uses Google's consent form before requesting ads. Where required, the Settings screen provides a Privacy options control so you can revisit your choices.
+
+## Product analytics
+
+PitTech uses Google Analytics (Firebase Analytics) to understand how the app is used — which screens are visited, and when cooks are started, finished and shared, recipes are created, and sign-ins happen — so we can improve the app. Analytics collects product-usage data such as screens viewed and those app interactions, together with app and device information and a pseudonymous app-instance identifier. We do not send Google Analytics your email address, account identifier, cook titles, notes, or photos. The analytics data is pseudonymous product-usage data processed by Google on our behalf; it is not sold, and it is not used to identify you personally. Google's handling of this information is described in [Google's Privacy Policy](https://policies.google.com/privacy).
 
 ## Exporting and sharing
 

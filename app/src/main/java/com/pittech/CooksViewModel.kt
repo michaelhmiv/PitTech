@@ -708,6 +708,7 @@ class CooksViewModel(
         val selected = app.grillMonitor.state.value.selectedDevice
         val resolved = if (draft.recordGrill && draft.smokerName.isBlank()) draft.copy(smokerName = selected?.name.orEmpty()) else draft
         val cookId = repository.startCook(resolved, transientPlaybook = _previewPlaybook.value)
+        com.pittech.analytics.PitTechAnalytics.cookStarted()
         _previewPlaybook.value = null
         discardSetupDraft()
         _selectedCookId.value = cookId
@@ -997,6 +998,7 @@ class CooksViewModel(
 
     fun completeCook(cookId: String) = perform {
         repository.completeCook(cookId)
+        com.pittech.analytics.PitTechAnalytics.cookCompleted()
         reconcileRecording()
         repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }
         cancelCompanionNotifications(cookId)

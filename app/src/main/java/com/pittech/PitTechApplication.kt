@@ -14,6 +14,9 @@ class PitTechApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashDiagnostics.install(this)
+        // GA4 analytics (issue #322): no-op until the Firebase client config
+        // is installed; never throws into startup.
+        com.pittech.analytics.PitTechAnalytics.initialize(this)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
             com.pittech.ui.ShareCardFiles.prune(this@PitTechApplication)
             kotlinx.coroutines.flow.combine(database.companionDao().observeAll(), database.cookDao().observeAllTimelineEvents(), database.cookDao().observeAllSensorReadings(), database.reminderDao().observeRules()) { _, _, _, _ -> Unit }

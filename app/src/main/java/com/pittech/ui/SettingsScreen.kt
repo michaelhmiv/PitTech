@@ -471,6 +471,10 @@ fun SettingsScreen(
                 "PitTech may show a Google ad in cook history after you have at least four completed cooks and no cook is active. When an ad request is allowed by your privacy choices, Google's SDK may collect and share your IP address, ad interactions, diagnostics, and device or account identifiers for advertising, analytics, and fraud prevention. Google encrypts this data in transit. PitTech does not attach cook records or photos to ad requests.",
                 style = MaterialTheme.typography.bodyLarge,
             )
+            Text(
+                "PitTech also uses Google Analytics (Firebase Analytics) to understand how the app is used — which screens are visited and when cooks are started, finished and shared, recipes are created, and sign-ins happen, together with app and device information and a pseudonymous app-instance identifier. Analytics never receives your email address, cook titles, notes or photos.",
+                style = MaterialTheme.typography.bodyLarge,
+            )
             TextButton(
                 onClick = { uriHandler.openUri("https://pittech-privacy-production.up.railway.app/") },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),

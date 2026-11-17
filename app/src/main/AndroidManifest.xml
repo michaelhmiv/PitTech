@@ -34,6 +34,15 @@
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="@string/admob_app_id" />
+        <!-- GA4 analytics (issue #322): Firebase auto-initialization is
+             disabled so a build without google-services.json never crashes
+             trying to initialize with missing resources. PitTechAnalytics
+             initializes Firebase manually, only when the generated
+             google_app_id resource exists. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

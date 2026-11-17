@@ -107,6 +107,7 @@ import Observation
                     throw NativeAccountError.invalid
                 }
                 var next = self.state; next.session = session; next.challenge = nil; next.providerChallenge = nil; next.refreshOperation = nil; try self.save(next)
+                PitTechAnalytics.signIn(method: .email)
                 self.pendingLink = nil; self.message = "Signed in. Your local cookbook is unchanged."
             } catch NativeAccountError.status(401) {
                 challenge.operation = nil; challenge.secret = nil; var next = self.state; next.challenge = challenge; try self.save(next)
@@ -158,6 +159,7 @@ import Observation
                     throw NativeAccountError.invalid
                 }
                 var next = self.state; next.session = session; next.challenge = nil; next.providerChallenge = nil; next.refreshOperation = nil; try self.save(next)
+                PitTechAnalytics.signIn(method: .apple)
                 self.pendingLink = nil
                 try? await self.refreshAccount()
                 self.message = "Signed in with Apple. Your local cookbook is unchanged."

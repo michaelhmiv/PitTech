@@ -27,6 +27,9 @@ struct CookDetailView: View {
     @Environment(NativePrivateSyncCoordinator.self) private var sync
     let cookId: String
     @State private var section = "Live"
+    /// Issue #322: the last GA4 screen reported for this detail, so the
+    /// initial-section latch and section changes never double-report.
+    @State private var lastReportedAnalyticsScreen: AnalyticsScreen?
     /// E4: the opening section and the protect prompt's eligibility are
     /// latched from the cook's status when the screen first opens.
     @State private var sectionLatched = false
@@ -326,7 +329,12 @@ struct CookDetailView: View {
                 // PL-20 (#184): this cook is the open one — crash recovery
                 // returns here. Device-local diagnostics state only.
                 .task { CrashDiagnostics.shared.recordOpenCook(cookId) }
-                .onAppear { latchInitialSection() }
+                .onAppear { latchInitialSection(); reportAnalyticsScreen() }
+                // GA4 screen views (issue #322): Live is the live board; the
+                // Timeline section is the in-progress timeline, and for a
+                // finished cook it is the cook's history — its story.
+                // Charts is not a tracked surface.
+                .onChange(of: section) { _, _ in reportAnalyticsScreen() }
                 .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
                 .navigationDestination(isPresented: Binding(get: { detailRoute != nil }, set: { if !$0 { detailRoute = nil } })) {
                     if detailRoute == "alerts" {
@@ -440,6 +448,19 @@ struct CookDetailView: View {
         sectionLatched = true
         section = FlowingE4.initialCookSection(status: cook.status)
         protectEligibleAtOpen = cook.status == "completed"
+    }
+    /// GA4 screen view for the currently visible detail section (issue #322).
+    private func reportAnalyticsScreen() {
+        guard let cook else { return }
+        let screen: AnalyticsScreen?
+        switch section {
+        case "Live": screen = .liveBoard
+        case "Timeline": screen = cook.status == "completed" ? .history : .timeline
+        default: screen = nil
+        }
+        guard let screen, screen != lastReportedAnalyticsScreen else { return }
+        lastReportedAnalyticsScreen = screen
+        PitTechAnalytics.screenView(screen)
     }
     private func latchProtectPrompt() {
         protectPromptShown = true

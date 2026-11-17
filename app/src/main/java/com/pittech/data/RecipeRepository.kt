@@ -49,7 +49,7 @@ class RecipeRepository(private val database: PitTechDatabase, private val photoS
                 val photo = photoStorage.copyIntoLibrary(uri, id, null, now)
                 copies += RecipeAsset(photo.id, revisionId, photo.relativePath, photo.mimeType, assetCaptions[uri].orEmpty(), null, now)
             }
-            return database.withTransaction {
+            val result = database.withTransaction {
                 val previous = recipeId?.let { dao.recipe(it) ?: error("This recipe is unavailable.") }
                 require(previous == null || previous.currentRevisionId == expectedRevisionId) { "This recipe changed while you were editing. Open its latest version and try again." }
                 val prior = previous?.let { dao.revision(it.currentRevisionId) ?: error("The previous recipe version is unavailable.") }
@@ -66,6 +66,11 @@ class RecipeRepository(private val database: PitTechDatabase, private val photoS
                 CookRepository(database, photoStorage).guide.retain(revision, snapshot, retainAssetsFromRevisionId ?: parent?.id)
                 saved
             }
+            // Issue #322: a save that created the recipe (no id was given —
+            // duplicate() lands here too, which is also a library creation)
+            // is the recipe_created settling point.
+            if (recipeId == null) com.pittech.analytics.PitTechAnalytics.recipeCreated()
+            return result
         } catch (failure: Throwable) { copies.forEach { photoStorage.delete(it.relativeFilePath) }; throw failure }
     }
 

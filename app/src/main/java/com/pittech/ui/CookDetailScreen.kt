@@ -184,6 +184,17 @@ fun CookDetailScreen(
     var quickEventType by rememberSaveable { mutableStateOf("note") }
     var viewingMarker by remember { mutableStateOf<TimelineEventEntity?>(null) }
     var selectedTab by rememberSaveable(data.cook.id) { mutableStateOf(initialCookTab(data.cook.status).name) }
+    // GA4 screen views (issue #322): the Live tab is the live board; the
+    // Timeline tab is the in-progress timeline, and for a finished cook it is
+    // the cook's history — its story. Charts is not a tracked surface.
+    val detailAnalyticsScreen = when (CookTab.valueOf(selectedTab)) {
+        CookTab.LIVE -> com.pittech.analytics.AnalyticsScreen.LIVE_BOARD
+        CookTab.TIMELINE -> if (data.cook.status == CookStatus.COMPLETED) com.pittech.analytics.AnalyticsScreen.HISTORY else com.pittech.analytics.AnalyticsScreen.TIMELINE
+        CookTab.CHARTS -> null
+    }
+    LaunchedEffect(detailAnalyticsScreen) {
+        detailAnalyticsScreen?.let { com.pittech.analytics.PitTechAnalytics.screenView(it) }
+    }
     var editCook by remember { mutableStateOf(false) }
     var showCookMenu by remember { mutableStateOf(false) }
     var addDish by remember { mutableStateOf(false) }
