@@ -49,27 +49,32 @@ the Android Dev app, `1:848714330882:android:328e155174c939db6b481b`).
   the wrapper calls `FirebaseApp.configure()` only when
   `GoogleService-Info.plist` is in the app bundle.
 
-## Phase B — console steps still required (not code)
+## Phase B — console steps (done 2026-11-17)
 
-1. In Firebase project `pittech-529a1`, confirm Google Analytics is enabled
-   and note the GA4 property + measurement identifiers.
-2. Register the production Android app `com.pittech` and download
-   `google-services.json`. The file must contain clients for **all three**
-   Android application ids or the google-services plugin fails the variants
-   it cannot match: `com.pittech` (release), `com.pittech.dev` (already
-   registered), `com.pittech.debug` (debug build type).
-3. Register the iOS app `com.pittech` and download `GoogleService-Info.plist`;
-   install it at `ios/PitTech/GoogleService-Info.plist` (if XcodeGen's
-   folder-source inclusion does not copy it into the bundle, add it to the
-   app target's `resources:` in `ios/project.yml` in the same change).
-4. Commit both config files (client config identifiers, not credentials) —
-   or inject them in the release workflows the same way; either way the
-   Phase C verification below decides.
-5. Update the store privacy declarations for the analytics addition: Play
-   data safety (analytics: product interaction + device/other ids,
-   pseudonymous) and the App Store privacy label (Product Interaction +
-   Device ID, Analytics purpose, not linked, not tracking — matching
-   `ios/PitTech/PrivacyInfo.xcprivacy`).
+1. ✅ Google Analytics enabled in Firebase project `pittech-529a1`; GA4
+   property **564773286** linked.
+2. ✅ Android apps registered and `google-services.json` downloaded; the file
+   carries clients for **all three** Android application ids:
+   `com.pittech` (`1:848714330882:android:af7008163788812f6b481b`),
+   `com.pittech.dev` (`1:848714330882:android:328e155174c939db6b481b`),
+   `com.pittech.debug` (`1:848714330882:android:3f0c968a524926496b481b`).
+   Note: the console's registration dialog showed a different id for the
+   debug app (`…android:6d5b4c56ec4d4eaa78f8fc6`); the downloaded JSON —
+   verified against Project Settings — is authoritative and carries
+   `3f0c968a524926496b481b`.
+3. ✅ iOS app `com.pittech` registered
+   (`1:848714330882:ios:2293d44c070e1d8d6b481b`); `GoogleService-Info.plist`
+   installed at `ios/PitTech/GoogleService-Info.plist` and declared in the
+   app target's `resources:` in `ios/project.yml` (folder-source inclusion
+   alone does not guarantee bundle copies).
+4. ✅ Both config files committed with this change (client config
+   identifiers, not credentials): `app/google-services.json`,
+   `ios/PitTech/GoogleService-Info.plist`.
+5. ⏳ Still outstanding (console, not code): update the store privacy
+   declarations for the analytics addition: Play data safety (analytics:
+   product interaction + device/other ids, pseudonymous) and the App Store
+   privacy label (Product Interaction + Device ID, Analytics purpose, not
+   linked, not tracking — matching `ios/PitTech/PrivacyInfo.xcprivacy`).
 
 ## Phase C — verification
 

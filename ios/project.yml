@@ -50,6 +50,9 @@ targets:
     resources:
       - path: PitTech/PrivacyInfo.xcprivacy
       - path: PitTech/TelemetryNotices.txt
+      # GA4 (issue #322): declared explicitly like PrivacyInfo.xcprivacy —
+      # folder-source inclusion alone does not guarantee bundle copies.
+      - path: PitTech/GoogleService-Info.plist
     dependencies:
       - package: CombustionBLE
         product: CombustionBLE
