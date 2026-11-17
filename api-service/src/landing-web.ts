@@ -10,6 +10,10 @@ export function landingPage() { return page; }
 
 export type LandingAsset = { contentType: string; body: Buffer };
 const manifest: ReadonlyArray<readonly [route: string, file: string, contentType: string]> = [
+  // AdMob verifies the developer domain by fetching /app-ads.txt at the apex;
+  // it must be served here so the path never falls through to the share-code
+  // handler. The body is the single authorized-seller line for the publisher.
+  ['/app-ads.txt', 'landing/app-ads.txt', 'text/plain'],
   ['/assets/app-icon.png', 'landing/app-icon.png', 'image/png'],
   ['/screenshots/live-board.png', 'landing/live-board.png', 'image/png'],
   ['/screenshots/timeline.png', 'landing/timeline.png', 'image/png'],

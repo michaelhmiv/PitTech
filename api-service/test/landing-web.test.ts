@@ -53,3 +53,24 @@ test('HTTP serves the landing page at the root and its assets, without shadowing
   const missing = await fetch(base + '/no-such-page');
   assert.equal(missing.status, 404); assert.match(missing.headers.get('content-type')!, /application\/json/);
 });
+
+test('HTTP serves app-ads.txt for AdMob domain verification without shadowing share codes', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'landing-web-')); t.after(() => rm(root, { force: true, recursive: true }));
+  const server = makeServer(new Relay(new MemoryRepository(), new FileStorage(root), budgets), {
+    ipKey: 'x'.repeat(32), uploadsEnabled: false, tempRoot: join(root, 'uploads'),
+    links: { appleAppIds: [], androidCertificates: [] },
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+
+  const ads = await fetch(base + '/app-ads.txt');
+  assert.equal(ads.status, 200); assert.equal(ads.headers.get('content-type'), 'text/plain');
+  assert.equal(await ads.text(), 'google.com, pub-2708638041809482, DIRECT, f08c47fec0942fa0\n');
+
+  // An unknown share code still returns its existing unavailable error.
+  const pack = await fetch(base + '/s/0000-0000-0000-0000');
+  assert.equal(pack.status, 404); assert.ok((await pack.text()).includes('This code is unavailable'));
+  const missing = await fetch(base + '/no-such-page');
+  assert.equal(missing.status, 404); assert.match(missing.headers.get('content-type')!, /application\/json/);
+  assert.equal((await missing.json() as { error: { code: string } }).error.code, 'unavailable');
+});
