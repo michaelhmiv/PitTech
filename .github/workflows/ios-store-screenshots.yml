@@ -1,0 +1,115 @@
+# Captures App Store screenshots of the real iOS app on clean Simulators
+# (Home, Live Board, Cook Timeline, and a finished cook's record),
+# seeded with the proven Flowing brisket board — the iOS mirror of
+# store-screenshots.yml (Android). The workflow is manual
+# (workflow_dispatch): StoreScreenshotCaptureTests is registered in
+# scripts/ios-test-shards.json under the "store-capture" shard, which
+# the ios-build gate matrix deliberately does not run, so the capture
+# runs only here. The PNGs land in the pittech-ios-store-screenshots
+# artifact, exported from the test result bundles' attachments.
+name: iOS store screenshots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pittech-ios-store-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture-ios-store-screenshots:
+    name: Capture iOS store screenshots (Simulator)
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Confirm Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project ios/PitTech.xcodeproj -scheme PitTech
+
+      - name: Capture the store screenshots (iPhone and iPad)
+        run: |
+          set -euo pipefail
+          mkdir -p build/store-screenshots
+          xcrun simctl list devices available --json | python3 -c '
+          import json, re, sys
+          data = json.load(sys.stdin)["devices"]
+          def runtime_rank(key):
+              match = re.search(r"iOS-(\d+)-(\d+)", key)
+              return (int(match.group(1)), int(match.group(2))) if match else (0, 0)
+          devices = []
+          for runtime, group in sorted(data.items(), key=lambda item: runtime_rank(item[0]), reverse=True):
+              devices.extend(device for device in group if device.get("isAvailable"))
+          def choose(family, preferences):
+              candidates = [device for device in devices if device["name"].startswith(family)]
+              if not candidates:
+                  raise SystemExit(f"No available {family} Simulator was found.")
+              for preference in preferences:
+                  matches = [device for device in candidates if preference in device["name"]]
+                  if matches:
+                      return matches[0]
+              return candidates[0]
+          iphone = choose("iPhone", ("Pro Max", "Pro"))
+          ipad = choose("iPad", ("iPad Pro 13", "iPad Pro", "iPad"))
+          print("|".join(("iphone", iphone["udid"], iphone["name"])))
+          print("|".join(("ipad", ipad["udid"], ipad["name"])))
+          ' > "$RUNNER_TEMP/pittech-capture-devices.txt"
+          cat "$RUNNER_TEMP/pittech-capture-devices.txt"
+
+          while IFS='|' read -r family device_id device_name; do
+            echo "Capturing PitTech store screenshots on ${device_name} (${device_id})"
+            python3 - "$device_id" <<'PYBOOT'
+          import subprocess, sys
+          device = sys.argv[1]
+          for attempt in range(2):
+              subprocess.run(["xcrun", "simctl", "boot", device], check=False)
+              try:
+                  subprocess.run(["xcrun", "simctl", "bootstatus", device, "-b"], check=True, timeout=360)
+                  break
+              except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+                  subprocess.run(["xcrun", "simctl", "shutdown", device], check=False)
+                  if attempt == 1:
+                      raise
+                  subprocess.run(["xcrun", "simctl", "erase", device], check=True)
+          PYBOOT
+            # Match the approved Android store captures: dark appearance,
+            # clean 9:41 status bar.
+            xcrun simctl ui "$device_id" appearance dark
+            xcrun simctl status_bar "$device_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+            xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath "build/capture-${family}.xcresult" -only-testing:PitTechUITests/StoreScreenshotCaptureTests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee "build/capture-${family}.log"
+            xcrun simctl shutdown "$device_id" || true
+            mkdir -p "build/store-screenshots/${family}"
+            xcrun xcresulttool export attachments --path "build/capture-${family}.xcresult" --output-path "build/store-screenshots/${family}"
+            ls -la "build/store-screenshots/${family}"
+          done < "$RUNNER_TEMP/pittech-capture-devices.txt"
+
+      - name: Upload the store screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-ios-store-screenshots
+          path: |
+            build/store-screenshots/**
+            build/capture-iphone.log
+            build/capture-ipad.log
+            build/capture-iphone.xcresult
+            build/capture-ipad.xcresult
+          if-no-files-found: warn
+          retention-days: 30
