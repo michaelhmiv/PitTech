@@ -78,11 +78,18 @@ GitHub issues; this file holds the durable rules of the road.
    resets in the sharded UI jobs cannot remove their CI exports.
    iOS retains compact test-result JSON separately from full screenshots and
    xcresult diagnostics so failures can be inspected without downloading video.
-2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow mints its
-   own distribution certificate and "PitTech App Store CI" provisioning
-   profile via the App Store Connect API on every run. Never add steps that
-   assume local keychains, exported .p12 files, or manually created
-   certificates/profiles.
+2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow uses the
+   ONE shared CI Apple Distribution certificate shared by all of the
+   owner's apps (Michael's ruling, 2026-11-20: the team effectively caps
+   at 2 distribution certificates, so mint-per-build is retired). The
+   shared certificate and its private key live only in the
+   `IOS_DIST_CERT_*` Actions secrets (`IOS_DIST_CERT_P12_BASE64`,
+   `IOS_DIST_CERT_P12_PASSWORD`, `IOS_DIST_CERT_ID`); the workflow decodes
+   the .p12 on the runner and never creates, frees, or revokes a
+   certificate. It still creates the per-app "PitTech App Store CI"
+   provisioning profile fresh via the App Store Connect API on every run,
+   referencing the shared certificate ID from `IOS_DIST_CERT_ID`. Never
+   add steps that assume local keychains or manually created profiles.
    It enables Associated Domains and Sign in with Apple before creating the
    profile. The app's `PitTech.entitlements` and the final HTTPS association
    files must match.

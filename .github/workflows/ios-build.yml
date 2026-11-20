@@ -296,6 +296,9 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+          IOS_DIST_CERT_ID: ${{ secrets.IOS_DIST_CERT_ID }}
           IOS_ADMOB_APP_ID: ${{ vars.IOS_ADMOB_APP_ID }}
           IOS_ADMOB_NATIVE_AD_UNIT_ID: ${{ vars.IOS_ADMOB_NATIVE_AD_UNIT_ID }}
         run: |
@@ -304,6 +307,9 @@ jobs:
             ASC_KEY_ID \
             ASC_ISSUER_ID \
             ASC_PRIVATE_KEY \
+            IOS_DIST_CERT_P12_BASE64 \
+            IOS_DIST_CERT_P12_PASSWORD \
+            IOS_DIST_CERT_ID \
             IOS_ADMOB_APP_ID \
             IOS_ADMOB_NATIVE_AD_UNIT_ID; do
             if [[ -z "${!secret_name}" ]]; then
@@ -312,16 +318,41 @@ jobs:
             fi
           done
 
+      # Shared CI distribution certificate per Michael's 2026-11-20 ruling
+      # (team cert cap; mint-per-build retired): one distribution certificate
+      # is shared by all apps' iOS CI and lives in the IOS_DIST_CERT_*
+      # secrets (IOS_DIST_CERT_P12_BASE64, IOS_DIST_CERT_P12_PASSWORD,
+      # IOS_DIST_CERT_ID). This step never creates or revokes a certificate;
+      # only the per-app "PitTech App Store CI" provisioning profile is
+      # created fresh via the App Store Connect API, referencing the shared
+      # certificate ID from the IOS_DIST_CERT_ID secret.
       - name: Generate signing material with the App Store Connect API
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+          IOS_DIST_CERT_ID: ${{ secrets.IOS_DIST_CERT_ID }}
         run: |
           set -euo pipefail
           sign_dir="$RUNNER_TEMP/pittech-signing"
           mkdir -p "$sign_dir"
           printf '%s' "$ASC_PRIVATE_KEY" > "$sign_dir/AuthKey.p8"
+          # Decode the shared distribution certificate (.p12) from the
+          # IOS_DIST_CERT_* secrets into the exact artifact the keychain
+          # install step already consumes (distribution.p12), and extract
+          # the certificate and private key alongside it with openssl into
+          # the same names the retired mint-per-build flow produced
+          # (ci.cer / ci.pem / ci.key).
+          printf '%s' "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$sign_dir/distribution.p12"
+          if ! openssl pkcs12 -in "$sign_dir/distribution.p12" -passin "pass:$IOS_DIST_CERT_P12_PASSWORD" -clcerts -nokeys -out "$sign_dir/ci.pem"; then
+            openssl pkcs12 -legacy -in "$sign_dir/distribution.p12" -passin "pass:$IOS_DIST_CERT_P12_PASSWORD" -clcerts -nokeys -out "$sign_dir/ci.pem"
+          fi
+          if ! openssl pkcs12 -in "$sign_dir/distribution.p12" -passin "pass:$IOS_DIST_CERT_P12_PASSWORD" -nocerts -nodes -out "$sign_dir/ci.key"; then
+            openssl pkcs12 -legacy -in "$sign_dir/distribution.p12" -passin "pass:$IOS_DIST_CERT_P12_PASSWORD" -nocerts -nodes -out "$sign_dir/ci.key"
+          fi
+          openssl x509 -in "$sign_dir/ci.pem" -outform DER -out "$sign_dir/ci.cer"
           SIGN_DIR="$sign_dir" python3 - <<'PYASC'
           import base64, json, os, pathlib, subprocess, time
           import urllib.request, urllib.error
@@ -366,72 +397,19 @@ jobs:
               except urllib.error.HTTPError as error:
                   raise SystemExit(f"ASC API {method} {path} failed ({error.code}): {error.read().decode()[:600]}")
 
-          # Free the distribution-certificate slot held by the previous CI run.
-          # Apple overrides the subject name on distribution certs, so the CI
-          # cert cannot be found by name; find it through the CI profile, whose
-          # name IS ours to choose, then delete the profile and revoke its cert.
-          old_profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
-          old_cert_ids = []
-          for old_profile in old_profiles:
-              linked = call("GET", f"/profiles/{old_profile['id']}/certificates").get("data", [])
-              old_cert_ids.extend(cert["id"] for cert in linked)
-          for old_profile in old_profiles:
-              call("DELETE", f"/profiles/{old_profile['id']}")
-              print(f"Deleted previous CI profile {old_profile['id']}")
-          for cert_id in dict.fromkeys(old_cert_ids):
-              call("DELETE", f"/certificates/{cert_id}")
-              print(f"Revoked previous CI certificate {cert_id}")
-
-          # A run that dies between minting its certificate and creating its
-          # profile leaves that certificate orphaned: no profile references
-          # it, so the pass above cannot find it, and it holds the
-          # distribution slot against every later POST /certificates (run
-          # #512 left certificate BKLX257346 in exactly that state). Sweep
-          # for it: revoke distribution-family certificates that NO
-          # provisioning profile references. A certificate any profile
-          # references is never touched, whatever its type or owner, and no
-          # profile is modified here. On a healthy run this finds nothing.
-          def get_all(path):
-              items = []
-              while path is not None:
-                  page = call("GET", path)
-                  items.extend(page.get("data", []))
-                  next_link = page.get("links", {}).get("next")
-                  path = next_link[len(api):] if next_link else None
-              return items
-
-          referenced_cert_ids = set()
-          for any_profile in get_all("/profiles?limit=200"):
-              linked = call("GET", f"/profiles/{any_profile['id']}/certificates").get("data", [])
-              referenced_cert_ids.update(cert["id"] for cert in linked)
-          distribution_types = {"DISTRIBUTION", "IOS_DISTRIBUTION", "MAC_APP_DISTRIBUTION"}
-          orphan_candidates = []
-          for certificate in get_all("/certificates?limit=200"):
-              cert_type = certificate.get("attributes", {}).get("certificateType")
-              if cert_type not in distribution_types:
-                  continue
-              if certificate["id"] in referenced_cert_ids:
-                  print(f"Distribution certificate {certificate['id']} ({cert_type}) is referenced "
-                        "by a profile; leaving it alone")
-              else:
-                  orphan_candidates.append(certificate)
-                  print(f"Orphan candidate: distribution certificate {certificate['id']} "
-                        f"({cert_type}) is referenced by no profile")
-          for orphan in orphan_candidates:
-              call("DELETE", f"/certificates/{orphan['id']}")
-              print(f"Revoked orphaned distribution certificate {orphan['id']}")
-          if not orphan_candidates:
-              print("No orphaned distribution certificates found")
-
-          # Fresh key + CSR on this runner; the private key never leaves it.
-          subprocess.run(["openssl", "genrsa", "-out", str(sign_dir / "ci.key"), "2048"], check=True)
-          subprocess.run(["openssl", "req", "-new", "-key", str(sign_dir / "ci.key"),
-                          "-out", str(sign_dir / "ci.csr"), "-subj", "/CN=PitTech CI"], check=True)
-          csr = (sign_dir / "ci.csr").read_text()
-          created = call("POST", "/certificates", payload={"data": {"type": "certificates", "attributes": {
-              "certificateType": "DISTRIBUTION", "csrContent": csr}}})["data"]
-          (sign_dir / "ci.cer").write_bytes(base64.b64decode(created["attributes"]["certificateContent"]))
-          print(f"Created distribution certificate {created['id']}")
+          # Shared CI distribution certificate (Michael's 2026-11-20 ruling):
+          # the certificate and its private key were decoded from the
+          # IOS_DIST_CERT_* secrets by the shell above into
+          # distribution.p12 / ci.cer / ci.pem / ci.key. No certificate is
+          # created, freed, or revoked here — mint-per-build is retired.
+          # The profile below references the shared certificate by the ASC
+          # certificate ID carried in the IOS_DIST_CERT_ID secret, so no
+          # code change is needed when the shared certificate rotates.
+          shared_cert_id = os.environ.get("IOS_DIST_CERT_ID", "").strip()
+          if not shared_cert_id:
+              raise SystemExit("Configure IOS_DIST_CERT_ID in this repository's Actions secrets "
+                               "before requesting an App Store build.")
+          print(f"Using shared distribution certificate {shared_cert_id}")
 
           bundle_records = call("GET", "/bundleIds?filter[identifier]=com.pittech&limit=200").get("data", [])
           exact_matches = [record for record in bundle_records
@@ -485,20 +463,16 @@ jobs:
           profile = call("POST", "/profiles", payload={"data": {"type": "profiles", "attributes": {
               "name": "PitTech App Store CI", "profileType": "IOS_APP_STORE"}, "relationships": {
               "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},
-              "certificates": {"data": [{"type": "certificates", "id": created["id"]}]}}}})["data"]
+              "certificates": {"data": [{"type": "certificates", "id": shared_cert_id}]}}}})["data"]
           (sign_dir / "PitTech.mobileprovision").write_bytes(base64.b64decode(profile["attributes"]["profileContent"]))
           print(f"Created provisioning profile {profile['id']}")
 
-          # Bundle cert + key into a .p12 for the keychain install step.
-          subprocess.run(["openssl", "x509", "-inform", "DER", "-in", str(sign_dir / "ci.cer"),
-                          "-out", str(sign_dir / "ci.pem")], check=True)
-          p12_password = subprocess.run(["uuidgen"], capture_output=True, text=True, check=True).stdout.strip()
-          subprocess.run(["openssl", "pkcs12", "-export", "-inkey", str(sign_dir / "ci.key"),
-                          "-in", str(sign_dir / "ci.pem"), "-out", str(sign_dir / "distribution.p12"),
-                          "-passout", f"pass:{p12_password}", "-name", "PitTech CI"], check=True)
+          # Hand the shared .p12 (decoded from the IOS_DIST_CERT_* secrets
+          # by the shell above) and the fresh profile to the keychain
+          # install step, using the same env names it already consumes.
           with open(os.environ["GITHUB_ENV"], "a") as env_file:
               env_file.write(f"PITTECH_P12_PATH={sign_dir / 'distribution.p12'}\n")
-              env_file.write(f"PITTECH_P12_PASSWORD={p12_password}\n")
+              env_file.write(f"PITTECH_P12_PASSWORD={os.environ['IOS_DIST_CERT_P12_PASSWORD']}\n")
               env_file.write(f"PITTECH_PROFILE_PATH={sign_dir / 'PitTech.mobileprovision'}\n")
           PYASC
 
